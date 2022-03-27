@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="4dp"
+    android:layout_marginTop="2dp"
+    android:layout_marginEnd="4dp"
+    android:layout_marginBottom="2dp"
+    android:background="@drawable/rounded_rec_background_24dp_corners"
+    android:backgroundTint="@color/dialogBackground"
+    android:clipChildren="false"
+    android:elevation="4dp"
+    android:paddingStart="8dp"
+    android:paddingTop="8dp"
+    android:paddingEnd="8dp"
+    tools:context="androidapp.byco.ui.PreviousRidesActivity"
+    tools:showIn="@layout/previous_rides_activity">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/previousRide"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/rounded_rec_background_16dp_corners"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:outlineProvider="background"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageView
+            android:id="@+id/map"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:background="@color/map_background"
+            android:scaleType="fitXY"
+            app:layout_constraintDimensionRatio="W,1:1"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:ignore="ContentDescription" />
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/title_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/ride_list_item_title_background"
+            android:orientation="horizontal"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="@+id/map"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <EditText
+                android:id="@+id/editable_title"
+                style="@style/BycoText.Large"
+                android:layout_width="0dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="8dp"
+                android:background="@android:color/transparent"
+                android:hint="@string/title_hint"
+                android:importantForAutofill="no"
+                android:inputType="textNoSuggestions"
+                android:singleLine="true"
+                android:textStyle="bold"
+                android:visibility="gone"
+                android:clickable="true"
+                android:focusable="true"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                android:imeOptions="actionDone"
+                tools:text="Oh so much unnecessary title gore" />
+
+            <!-- inputType is set to prevent spelling correction underlines -->
+            <TextView
+                android:id="@+id/title"
+                style="@style/BycoText.Large"
+                android:layout_width="0dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:background="@android:color/transparent"
+                android:ellipsize="end"
+                android:hint="@string/title_hint"
+                android:singleLine="true"
+                android:textStyle="bold"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/edit_title"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                tools:text="Oh so much unnecessary title gore, so much gore" />
+
+            <ImageButton
+                android:id="@+id/edit_title"
+                style="?attr/borderlessButtonStyle"
+                android:layout_width="@dimen/buttonWidth"
+                android:layout_height="@dimen/buttonWidth"
+                android:contentDescription="@string/edit_title_desc"
+                android:src="@drawable/ic_baseline_edit_24"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:tint="?android:attr/textColorPrimary" />
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/stats"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="16dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent">
+
+            <TextView
+                android:id="@+id/date"
+                style="@style/BycoText.Gray.Small"
+                android:layout_width="0dp"
+                android:layout_marginEnd="16dp"
+                android:lines="1"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                tools:text="25th March 2007" />
+
+            <TextView
+                android:id="@+id/distance"
+                style="@style/BycoText.White.Small"
+                android:layout_width="0dp"
+                android:layout_marginTop="8dp"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/date"
+                tools:text="15 mi" />
+
+            <TextView
+                android:id="@+id/duration"
+                style="@style/BycoText.White.Small"
+                android:layout_width="0dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toEndOf="@id/distance"
+                app:layout_constraintTop_toTopOf="@id/distance"
+                tools:text="1:43 h" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <androidapp.byco.ui.views.CoachMarkView
+        android:id="@+id/show_on_map_coach"
+        style="@style/BycoCoachMark"
+        android:layout_marginStart="@dimen/buttonWidth"
+        android:layout_marginBottom="-8dp"
+        android:importantForAccessibility="noHideDescendants"
+        app:arrowDirection="bottomStart"
+        app:layout_constraintBottom_toTopOf="@id/actions"
+        app:layout_constraintStart_toStartOf="@id/actions"
+        app:persistentId="previous_ride_list_item/show_on_map_coach"
+        app:text="@string/show_on_map_coach" />
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/actions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:orientation="horizontal"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/previousRide">
+
+        <ImageButton
+            android:id="@+id/share"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="@dimen/buttonWidth"
+            android:layout_height="@dimen/buttonWidth"
+            android:contentDescription="@string/share_button_desc"
+            android:src="@drawable/ic_baseline_share_24"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:tint="?android:textColorPrimary" />
+
+        <ImageButton
+            android:id="@+id/show_hide"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="@dimen/buttonWidth"
+            android:layout_height="@dimen/buttonWidth"
+            android:contentDescription="@string/show_button_desc"
+            android:src="@drawable/ic_baseline_eye_off_24"
+            app:layout_constraintStart_toEndOf="@id/share"
+            app:layout_constraintTop_toTopOf="parent"
+            app:tint="?android:textColorPrimary" />
+
+        <ImageButton
+            android:id="@+id/delete"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="@dimen/buttonWidth"
+            android:layout_height="@dimen/buttonWidth"
+            android:contentDescription="@string/delete_button_desc"
+            android:src="@drawable/ic_baseline_delete_24"
+            app:layout_constraintStart_toEndOf="@id/show_hide"
+            app:layout_constraintTop_toTopOf="parent"
+            app:tint="?android:textColorPrimary" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

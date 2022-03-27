@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="wrap_content"
+    android:layout_height="match_parent"
+    android:layout_marginStart="2dp"
+    android:layout_marginTop="4dp"
+    android:layout_marginEnd="2dp"
+    android:layout_marginBottom="4dp"
+    android:background="@drawable/rounded_rec_background_24dp_corners"
+    android:backgroundTint="@color/dialogBackground"
+    android:clipChildren="false"
+    android:elevation="4dp"
+    android:gravity="bottom"
+    android:paddingStart="8dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp"
+    tools:context="androidapp.byco.ui.PreviousRidesActivity"
+    tools:showIn="@layout/previous_rides_activity"
+    tools:ignore="RtlSymmetry">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/previousRide"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:background="@drawable/rounded_rec_background_16dp_corners"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:outlineProvider="background"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <ImageView
+            android:id="@+id/map"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:background="@color/map_background"
+            android:scaleType="fitXY"
+            app:layout_constraintDimensionRatio="H,1:1"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:ignore="ContentDescription" />
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/title_bar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:background="@color/ride_list_item_title_background"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <EditText
+                android:id="@+id/editable_title"
+                style="@style/BycoText.Large"
+                android:layout_width="0dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="8dp"
+                android:background="@android:color/transparent"
+                android:hint="@string/title_hint"
+                android:clickable="true"
+                android:focusable="true"
+                android:importantForAutofill="no"
+                android:inputType="textNoSuggestions"
+                android:singleLine="true"
+                android:textStyle="bold"
+                android:visibility="gone"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                android:imeOptions="actionDone"
+                tools:text="Oh so much unnecessary title gore" />
+
+            <TextView
+                android:id="@+id/title"
+                style="@style/BycoText.Large"
+                android:layout_width="0dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:background="@android:color/transparent"
+                android:ellipsize="end"
+                android:hint="@string/title_hint"
+                android:singleLine="true"
+                android:textStyle="bold"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/title_end_barrier"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                tools:text="Oh so much unnecessary title gore" />
+
+            <androidx.constraintlayout.widget.Barrier
+                android:id="@+id/title_end_barrier"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                app:barrierDirection="start"
+                app:constraint_referenced_ids="edit_title_wrapper, title_end_margin"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <View
+                android:id="@+id/title_end_margin"
+                android:layout_width="16dp"
+                android:layout_height="1dp"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <androidapp.byco.ui.views.HideIfNotFitFrameLayout
+                android:id="@+id/edit_title_wrapper"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/buttonWidth"
+                android:layout_marginStart="128dp"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintHorizontal_bias="1.0"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintWidth_max="@dimen/buttonWidth">
+
+                <ImageButton
+                    android:id="@+id/edit_title"
+                    style="?attr/borderlessButtonStyle"
+                    android:layout_width="@dimen/buttonWidth"
+                    android:layout_height="@dimen/buttonWidth"
+                    android:contentDescription="@string/edit_title_desc"
+                    android:src="@drawable/ic_baseline_edit_24"
+                    app:tint="?android:attr/textColorPrimary" />
+            </androidapp.byco.ui.views.HideIfNotFitFrameLayout>
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+        <androidapp.byco.ui.views.HideIfNotFitFrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="16dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="@+id/map"
+            app:layout_constraintHorizontal_bias="0.0"
+            app:layout_constraintStart_toStartOf="parent">
+
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content">
+
+                <TextView
+                    android:id="@+id/date"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="16dp"
+                    android:lines="1"
+                    android:textSize="@dimen/smallText"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent"
+                    tools:text="25th March 2007" />
+
+                <TextView
+                    android:id="@+id/distance"
+                    style="@style/BycoText.White.Small"
+                    android:layout_width="0dp"
+                    android:layout_marginTop="8dp"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toBottomOf="@id/date"
+                    tools:text="15 mi" />
+
+                <TextView
+                    android:id="@+id/duration"
+                    style="@style/BycoText.White.Small"
+                    android:layout_width="0dp"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintStart_toEndOf="@id/distance"
+                    app:layout_constraintTop_toTopOf="@id/distance"
+                    tools:text="1:43 h" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
+        </androidapp.byco.ui.views.HideIfNotFitFrameLayout>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <LinearLayout
+        android:id="@+id/actions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:clipChildren="false"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toEndOf="@id/previousRide">
+
+        <ImageButton
+            android:id="@+id/delete"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="@dimen/buttonWidth"
+            android:layout_height="@dimen/buttonWidth"
+            android:contentDescription="@string/delete_button_desc"
+            android:src="@drawable/ic_baseline_delete_24"
+            app:tint="?android:textColorPrimary" />
+
+        <ImageButton
+            android:id="@+id/show_hide"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="@dimen/buttonWidth"
+            android:layout_height="@dimen/buttonWidth"
+            android:contentDescription="@string/show_button_desc"
+            android:src="@drawable/ic_baseline_eye_off_24"
+            app:tint="?android:textColorPrimary" />
+
+        <ImageButton
+            android:id="@+id/share"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="@dimen/buttonWidth"
+            android:layout_height="@dimen/buttonWidth"
+            android:contentDescription="@string/share_button_desc"
+            android:src="@drawable/ic_baseline_share_24"
+            app:tint="?android:textColorPrimary" />
+
+    </LinearLayout>
+
+    <androidapp.byco.ui.views.CoachMarkView
+        android:id="@+id/show_on_map_coach"
+        style="@style/BycoCoachMark"
+        android:layout_marginEnd="-8dp"
+        android:layout_marginBottom="@dimen/buttonWidth"
+        app:arrowDirection="end"
+        android:importantForAccessibility="noHideDescendants"
+        app:layout_constraintBottom_toBottomOf="@id/actions"
+        app:layout_constraintEnd_toStartOf="@id/actions"
+        app:persistentId="previous_ride_list_item/show_on_map_coach"
+        app:text="Show ride on map" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

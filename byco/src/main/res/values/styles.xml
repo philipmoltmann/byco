@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <style name="BycoCoachMark">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="backgroundColor">@color/accent</item>
+        <item name="android:elevation">16dp</item>
+        <item name="textColor">@color/black</item>
+    </style>
+
+    <style name="BycoText">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">@dimen/largeText</item>
+        <item name="android:textColor">?android:textColorPrimary</item>
+        <item name="android:drawableTint">?android:textColorPrimary</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:textAlignment">textStart</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:drawablePadding">2sp</item>
+        <item name="android:clickable">false</item>
+    </style>
+
+    <style name="BycoText.White.Fixed">
+        <item name="android:textSize">@dimen/largeTextFixed</item>
+    </style>
+
+    <style name="BycoText.White.Fixed.Small">
+        <item name="android:textSize">@dimen/smallTextFixed</item>
+    </style>
+
+    <style name="BycoText.White.Fixed.Speed">
+        <item name="android:textSize" tools:ignore="SpUsage">200dp</item>
+        <item name="android:typeface">sans</item>
+        <item name="android:textAlignment">center</item>
+    </style>
+
+    <style name="BycoText.White.Fixed.Label" parent="BycoText.White.Fixed.Small">
+        <item name="android:textColor">@color/text_minimum_brightness</item>
+    </style>
+
+    <style name="BycoText.White.Label" parent="BycoText.White.Small">
+        <item name="android:textColor">@color/text_minimum_brightness</item>
+    </style>
+
+    <style name="BycoText.White">
+        <item name="android:textColor">@color/white</item>
+    </style>
+
+    <style name="BycoText.White.Small">
+        <item name="android:textSize">@dimen/smallText</item>
+    </style>
+
+    <style name="BycoText.White.Large">
+        <item name="android:textSize">@dimen/xLargeText</item>
+    </style>
+
+    <style name="BycoText.Black">
+        <item name="android:textColor">@color/black</item>
+    </style>
+
+    <style name="BycoText.Black.Small">
+        <item name="android:textSize">@dimen/smallText</item>
+    </style>
+
+    <style name="BycoText.Small">
+        <item name="android:textSize">@dimen/smallText</item>
+    </style>
+
+    <style name="BycoText.Large">
+        <item name="android:textSize">@dimen/largeText</item>
+    </style>
+
+    <style name="BycoText.Gray">
+        <item name="android:textColor">?android:textColorSecondary</item>
+    </style>
+
+    <style name="BycoText.Gray.Small">
+        <item name="android:textSize">@dimen/smallText</item>
+    </style>
+
+    <style name="BycoRecordButton">
+        <item name="android:layout_width">@dimen/buttonWidth</item>
+        <item name="android:layout_height">@dimen/buttonWidth</item>
+        <item name="android:src">@drawable/ic_baseline_record_24</item>
+        <item name="tint">@color/record_icon_color</item>
+        <item name="android:padding">4dp</item>
+        <item name="android:background">@drawable/circle_button_background</item>
+    </style>
+
+    <style name="BycoMap">
+        <item name="mapColor">@color/map_background</item>
+
+        <item name="badSurfaceWayColor">@color/bad_surface_way</item>
+        <item name="currentRideColor">@color/current_ride_color</item>
+        <item name="defaultWayColor">@color/default_way</item>
+        <item name="designatedWayColor">@color/designated_way</item>
+        <item name="highTrafficWayColor">@color/high_traffic_way</item>
+        <item name="noBicyclesWayColor">@color/no_bicycles_way</item>
+
+        <item name="badSurfaceWayIndicatorColor">@color/bad_surface_way_indicator</item>
+        <item name="currentRideIndicatorColor">@color/current_ride_indicator_color</item>
+        <item name="defaultWayIndicatorColor">@color/default_way_indicator</item>
+        <item name="designatedWayIndicatorColor">@color/designated_way_indicator</item>
+        <item name="highTrafficWayIndicatorColor">@color/high_traffic_way_indicator</item>
+        <item name="noBicyclesWayIndicatorColor">@color/no_bicycles_way_indicator</item>
+
+        <item name="tilt">30</item>
+        <item name="zoom">18</item>
+        <item name="onewayIndicator">@drawable/ic_baseline_arrow_up_small_24</item>
+        <item name="onewayIndicatorFrequency">0.001</item>
+    </style>
+
+    <style name="BycoElevation">
+        <item name="color">@color/black</item>
+        <item name="progressColor">@color/black</item>
+        <item name="topLineColor">@color/speed_shade_divider</item>
+        <item name="progressMarkerColor">@color/light_gray</item>
+        <item name="progressMarkerWidth">2dp</item>
+        <item name="topLineWidth">1dp</item>
+    </style>
+
+    <style name="BycoAlertDialogButton" parent="Widget.AppCompat.Button.ButtonBar.AlertDialog">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">-4dp</item>
+    </style>
+
+    <style name="BycoAlertDialogButton.Vertical">
+        <item name="layout_constraintHorizontal_bias">1.0</item>
+        <item name="android:layout_marginStart">16dp</item>
+        <item name="android:layout_marginEnd">-4dp</item>
+        <item name="android:layout_marginBottom">0dp</item>
+    </style>
+
+    <style name="BycoActionBar" parent="Widget.AppCompat.ActionBar.Solid">
+        <item name="background">@color/windowBackground</item>
+        <item name="elevation">0dp</item>
+    </style>
+</resources>

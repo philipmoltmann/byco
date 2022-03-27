@@ -1,0 +1,408 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:keepScreenOn="true"
+    tools:context="androidapp.byco.ui.RidingActivity">
+
+    <!-- TODO: Offset cursor to the right a little -->
+    <androidapp.byco.ui.views.MapView
+        android:id="@+id/map"
+        style="@style/BycoMap"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:centerFromBottom="100dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/speedBackground"
+        app:layout_constraintTop_toTopOf="parent"/>
+
+    <ImageView
+        android:id="@+id/gradient_corner"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:src="@drawable/map_fade_gradient_corner"
+        app:layout_constraintBottom_toBottomOf="@id/notchSafeFrameLayout"
+        app:layout_constraintDimensionRatio="1:1"
+        app:layout_constraintStart_toStartOf="@id/notchSafeFrameLayout"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:ignore="ContentDescription" />
+
+    <ImageView
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:src="@drawable/map_fade_gradient"
+        app:layout_constraintBottom_toBottomOf="@id/notchSafeFrameLayout"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/gradient_corner"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:ignore="ContentDescription" />
+
+
+    <LinearLayout
+        android:id="@+id/location_permission_rationale"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/speedBackgroundBottom"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:visibility="visible">
+
+        <ImageView
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_outline_location_on_24"
+            app:tint="@color/white"
+            tools:ignore="ContentDescription" />
+
+        <TextView
+            style="@style/BycoText.White"
+            android:layout_marginStart="48dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="48dp"
+            android:textAlignment="center"
+            android:text="@string/location_permission_rationale" />
+
+        <Button
+            android:id="@+id/location_permission_request_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/allow_location_access_button" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/cursor"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:layout_marginBottom="50dp"
+        android:src="@drawable/cursor"
+        app:layout_constraintBottom_toBottomOf="@id/map"
+        app:layout_constraintEnd_toEndOf="@id/map"
+        app:layout_constraintStart_toStartOf="@id/map"
+        tools:ignore="ContentDescription" />
+
+    <ImageView
+        android:id="@+id/directionIndicator"
+        android:layout_width="200dp"
+        android:layout_height="200dp"
+        android:src="@drawable/directions_indicator"
+        app:layout_constraintBottom_toBottomOf="@id/cursor"
+        app:layout_constraintEnd_toEndOf="@id/cursor"
+        app:layout_constraintStart_toStartOf="@id/cursor"
+        app:layout_constraintTop_toTopOf="@id/cursor"
+        tools:ignore="ContentDescription" />
+
+    <androidapp.byco.ui.views.ElevationView
+        android:id="@+id/elevation_profile"
+        style="@style/BycoElevation"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="@+id/map"
+        tools:visibility="visible" />
+
+    <androidapp.byco.ui.views.NotchSafeFrameLayout
+        android:id="@+id/climbData"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:alpha="0"
+        android:paddingEnd="16dp"
+        app:addPadding="end"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:alpha="1"
+        tools:ignore="RtlSymmetry">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/climbLeftLabel"
+                style="@style/BycoText.White.Label"
+                android:labelFor="@id/climbLeft"
+                android:text="@string/climb_left_label" />
+
+            <TextView
+                android:id="@+id/climbLeft"
+                style="@style/BycoText.White.Large"
+                tools:text="500 ft" />
+        </LinearLayout>
+    </androidapp.byco.ui.views.NotchSafeFrameLayout>
+
+    <View
+        android:id="@+id/speedBackgroundDividerTop"
+        android:layout_width="1dp"
+        android:layout_height="match_parent"
+        android:background="@color/speed_shade_divider"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="@id/speedBackgroundBottom"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <ImageView
+        android:id="@+id/speedBackgroundDividerBottom"
+        android:layout_width="wrap_content"
+        android:layout_height="0dp"
+        android:adjustViewBounds="true"
+        android:scaleType="fitXY"
+        android:src="@drawable/speed_shade_right"
+        android:textSize="@dimen/largeText"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toEndOf="@id/speedBackgroundDividerTop"
+        app:layout_constraintTop_toTopOf="parent"
+        app:tint="@color/speed_shade_divider"
+        tools:ignore="ContentDescription" />
+
+    <View
+        android:id="@+id/speedBackground"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@color/speed_shade"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/speedBackgroundBottom"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <ImageView
+        android:id="@+id/speedBackgroundBottom"
+        android:layout_width="wrap_content"
+        android:layout_height="0dp"
+        android:adjustViewBounds="true"
+        android:scaleType="fitXY"
+        android:src="@drawable/speed_shade_right"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="@id/speedWrapper"
+        app:layout_constraintTop_toTopOf="parent"
+        app:tint="@color/speed_shade"
+        tools:ignore="ContentDescription" />
+
+    <androidapp.byco.ui.views.NotchSafeFrameLayout
+        android:id="@+id/speedWrapper"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingStart="32dp"
+        android:paddingEnd="52dp"
+        app:addPadding="start"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/speed"
+                style="@style/BycoText.White.Fixed.Speed"
+                android:layout_width="230dp"
+                android:text="0"
+                tools:ignore="HardcodedText" />
+
+            <TextView
+                android:id="@+id/speed_unit"
+                style="@style/BycoText.White.Label"
+                android:layout_marginTop="-40dp"
+                android:text="@string/speed_unit_imperial" />
+
+        </LinearLayout>
+
+    </androidapp.byco.ui.views.NotchSafeFrameLayout>
+
+    <TextView
+        android:id="@+id/time"
+        style="@style/BycoText.White"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="@id/speedBackground"
+        tools:text="1:23" />
+
+    <TextView
+        android:id="@+id/timeLabel"
+        style="@style/BycoText.White.Label"
+        android:labelFor="@id/time"
+        android:text="@string/time_label"
+        app:layout_constraintBottom_toTopOf="@id/time"
+        app:layout_constraintEnd_toEndOf="@id/time" />
+
+    <androidapp.byco.ui.views.NotchSafeFrameLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginBottom="16dp"
+        app:addPadding="start"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="start"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/battery_label"
+                style="@style/BycoText.White.Label"
+                android:labelFor="@id/battery"
+                android:text="@string/battery_pct_label"
+                android:visibility="invisible"
+                tools:visibility="visible" />
+
+            <TextView
+                android:id="@+id/battery"
+                style="@style/BycoText.White"
+                android:visibility="invisible"
+                tools:text="43"
+                tools:visibility="visible" />
+
+        </LinearLayout>
+
+    </androidapp.byco.ui.views.NotchSafeFrameLayout>
+
+    <LinearLayout
+        android:id="@+id/record_stop_wrapper"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:orientation="horizontal"
+        app:layout_constraintEnd_toEndOf="@id/speedBackground"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageButton
+            android:id="@+id/record_stop"
+            style="@style/BycoRecordButton"
+            android:layout_marginEnd="16dp"
+            android:contentDescription="@string/stop_ride" />
+    </LinearLayout>
+
+    <androidapp.byco.ui.views.CoachMarkView
+        android:id="@+id/record_coach"
+        style="@style/BycoCoachMark"
+        app:arrowDirection="start"
+        android:importantForAccessibility="noHideDescendants"
+        app:layout_constraintStart_toEndOf="@id/record_stop_wrapper"
+        app:layout_constraintTop_toTopOf="@id/record_stop_wrapper"
+        app:persistentId="riding_activity/record_coach"
+        app:text="@string/record_coach" />
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/ride"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:alpha="0"
+        android:paddingEnd="16dp"
+        app:layout_constraintEnd_toEndOf="@id/speedBackground"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:alpha="1"
+        tools:ignore="RtlSymmetry">
+
+        <TextView
+            android:id="@+id/rideDurationLabel"
+            style="@style/BycoText.White.Label"
+            android:layout_marginTop="16dp"
+            android:labelFor="@id/rideDuration"
+            android:text="@string/ride_duration_label"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/rideDuration"
+            style="@style/BycoText.White"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/rideDurationLabel"
+            tools:text="1:43" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <androidapp.byco.ui.views.NotchSafeFrameLayout
+        android:id="@+id/notchSafeFrameLayout"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:addPadding="end"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/directions_back"
+                style="?attr/borderlessButtonStyle"
+                android:layout_width="@dimen/buttonWidth"
+                android:layout_height="@dimen/buttonWidth"
+                android:contentDescription="@string/get_directions_back"
+                android:src="@drawable/ic_home_24_with_outline"
+                app:layout_constraintEnd_toStartOf="@+id/notchSafeFrameLayout"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <ImageButton
+                android:id="@+id/overflow_menu"
+                style="?attr/borderlessButtonStyle"
+                android:layout_width="@dimen/buttonWidth"
+                android:layout_height="@dimen/buttonWidth"
+                android:contentDescription="@string/overflow_menu_desc"
+                android:src="@drawable/ic_more_vert_24_with_outline" />
+
+        </LinearLayout>
+
+    </androidapp.byco.ui.views.NotchSafeFrameLayout>
+
+    <androidapp.byco.ui.views.CoachMarkView
+        android:id="@+id/previous_rides_coach"
+        style="@style/BycoCoachMark"
+        android:layout_marginTop="-8dp"
+        app:arrowDirection="topEnd"
+        android:labelFor="@id/overflow_menu"
+        app:layout_constraintEnd_toEndOf="@id/notchSafeFrameLayout"
+        app:layout_constraintTop_toBottomOf="@id/notchSafeFrameLayout"
+        app:persistentId="riding_activity/previous_rides_coach"
+        app:text="@string/previous_rides_coach" />
+
+    <androidapp.byco.ui.views.CoachMarkView
+        android:id="@+id/directions_back_coach"
+        style="@style/BycoCoachMark"
+        android:layout_marginTop="-8dp"
+        android:layout_marginEnd="@dimen/buttonWidth"
+        app:arrowDirection="topEnd"
+        android:importantForAccessibility="noHideDescendants"
+        app:layout_constraintEnd_toEndOf="@id/notchSafeFrameLayout"
+        app:layout_constraintTop_toBottomOf="@id/notchSafeFrameLayout"
+        app:persistentId="riding_activity/directions_back_coach"
+        app:text="@string/directions_back_coach" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

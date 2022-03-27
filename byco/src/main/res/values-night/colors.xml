@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<resources>
+    <color name="battery_ok">@color/light_gray</color>
+    <color name="battery_low">#FFDD4444</color>
+
+    <color name="default_way">#FFBBBBBB</color>
+    <color name="default_way_indicator">@color/white</color>
+    <color name="no_bicycles_way">#FF111111</color>
+    <!-- no_bicycles_way_indicator is map_background -->
+    <color name="high_traffic_way">#FF888888</color>
+    <color name="high_traffic_way_indicator">#FF666666</color>
+    <color name="designated_way">#FF44BB00</color>
+    <color name="designated_way_indicator">#FF88DD00</color>
+    <color name="bad_surface_way">#FF111111</color>
+    <!-- bad_surface_way_indicator is map_background -->
+    <color name="map_background">#FF222222</color>
+    <color name="map_background_translucent">#AA222222</color>
+
+    <color name="cursor_color">#FFDD0000</color>
+
+    <color name="speed_shade">@color/black</color>
+    <color name="speed_shade_divider">#FF333333</color>
+
+    <color name="ride_list_item_title_background">#66000000</color>
+
+    <color name="dialogBackground">@color/dark_gray</color>
+    <color name="windowBackground">@color/very_dark_gray</color>
+
+    <color name="preferencesHighlight">@color/accent</color>
+</resources>

@@ -1,0 +1,99 @@
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<resources>
+    <string name="ride_duration_label">Fahrt</string>
+    <string name="battery_pct_label">Batterie</string>
+    <string name="time_label">Uhr</string>
+    <string name="battery_pct_pattern">%d%%</string>
+
+    <string name="climb_left_label">zum Gipfel</string>
+
+    <string name="recording_notification_title">Radfahrt wird aufgenommen</string>
+    <string name="recording_notification_content">%s</string>
+    <string name="ongoing_recording_notification_channel">Radfahrtaufnahmen</string>
+    <string name="stop_ride">Beenden</string>
+    <string name="stopping_ride_label">Aufnahme wird beendet</string>
+    <string name="record_coach">Fahrt aufnehmen</string>
+
+    <string name="overflow_menu_desc">Mehr Funktionen</string>
+    <string name="rides_menu">Fahrten</string>
+    <string name="previous_rides_coach">Aufnahmen sind hier</string>
+    <string name="reset_estimated_ride">Neue Fahrt</string>
+    <string name="clear_directions">Weg zurück ausblenden</string>
+    <string name="help">Hilfe</string>
+
+    <string name="previous_rides_label">Aufgenommene Fahrten</string>
+    <string name="share_button_desc">Teilen</string>
+    <string name="delete_button_desc">Löschen</string>
+    <string name="confirm_delete_ride">%s löschen?</string>
+    <string name="edit_title_desc">Fahrt umbenennen</string>
+    <string name="add_ride">Fahrt hinzufügen</string>
+    <string name="adding_ride_label">Fahrt wird hinzugefügt</string>
+    <string name="add_ride_label">Fahrt hinzufügen</string>
+
+    <string name="unknown_ride_name">Unbenannte Fahrt</string>
+    <string name="title_hint">Unbenannte Fahrt</string>
+
+    <string name="search">Suchen</string>
+    <string name="previous_rides_query_hint">Nach Namen oder Daten suchen…</string>
+    <string name="button_cancel">Abbrechen</string>
+
+    <string name="empty_view">Fahrten konnen mit dem (+) Knopf hinzugefügt, oder auf dem Kartenbildschirm aufgenommen werden.</string>
+
+    <string name="show_button_desc">Anzeigen</string>
+    <string name="show_on_map_coach">Fahrt auf Karte anzeigen</string>
+    <string name="stop_showing_ride">Aufgenommene Fahrt ausblenden</string>
+    <string name="hide_visible_track">%s wird ausgeblendet</string>
+    <string name="show_visible_track">%s wird auf der Karte angezeigt</string>
+
+    <string name="speed_unit_imperial">mph</string>
+    <string name="speed_unit_metric">km/h</string>
+
+    <string name="speed_pattern_metric">%d km/h</string>
+    <string name="speed_pattern_metric_no_units">%d</string>
+    <string name="speed_pattern_imperial">%d mph</string>
+    <string name="speed_pattern_imperial_no_units">%d</string>
+
+    <string name="location_permission_denied_warning">Gerätestandort benötigt, um Geschwindigkeit und Karte zu zeigen</string>
+    <string name="location_permission_rationale">Erlaube Byco den Standort abzurufen, um eine Karte und deine Geschwindigkeit zu zeigen und Fahrten aufzunehmen.</string>
+    <string name="allow_location_access_button">Zugriff erlauben</string>
+
+    <string name="get_directions_back">Finde Weg zurück</string>
+    <string name="directions_back_coach">Weg zurück finden</string>
+    <string name="confirm_directions">Weg bestätigen</string>
+    <string name="set_route">Anzeigen</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="open_maps">Maps öffnen</string>
+    <string name="route_back_to_start_of_ride">Weg zurück</string>
+    <string name="finding_route_back_to_start_of_ride">Finde Weg zurück</string>
+    <string name="cannot_find_route_back_to_start_of_ride">Kann keinen Weg zurück finden</string>
+
+    <string name="whole_ride">Ganze Fahrt</string>
+    <string name="remove_start_and_end">Anfang und Ende entfernen</string>
+    <string name="share_mode_coach">Privatsphäre schützen</string>
+
+    <string name="about">Über Byco</string>
+    <string name="close">Schließen</string>
+    <string name="licenses">Lizenzen</string>
+    <string name="cannot_find_licenses">Kann Lizenzen nicht finden</string>
+    <string name="privacy_link">Datenschutzerklärung</string>
+
+    <string name="save_to_file">Datei speichern</string>
+    <string name="save_to_file_message">Speichere %s als Datei</string>
+
+    <string name="dismiss">Verstecken</string>
+</resources>

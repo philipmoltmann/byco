@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="androidapp.byco.benchmark">
+
+    <application
+        android:label="Byco Benchmark"
+        tools:replace="android:label">
+        <!-- Remove file profiler as names have to be device wide unique -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="andoidapp.byco.fileprovider"
+            tools:node="remove" />
+
+        <activity
+            android:name="androidapp.byco.RidingActivity"
+            android:exported="false"
+            tools:replace="android:exported"
+            tools:ignore="MissingClass" />
+    </application>
+</manifest>

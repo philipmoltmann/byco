@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="androidapp.byco.lib">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <queries>
+        <package android:name="com.google.android.apps.maps" />
+    </queries>
+
+    <application
+        android:name="androidapp.byco.BycoApplication"
+        android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_descriptor"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true">
+        <activity
+            android:name="androidapp.byco.ui.AboutActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Byco.Dialog" />
+        <activity
+            android:name="androidapp.byco.ui.ConfirmDirectionsActivity"
+            android:exported="false"
+            android:label="@string/confirm_directions"
+            android:theme="@style/Theme.Byco.Dialog" />
+        <activity
+            android:name="androidapp.byco.ui.RidingActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Byco.Fullscreen">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name="androidapp.byco.ui.PreviousRidesActivity"
+            android:exported="false"
+            android:label="@string/previous_rides_label"
+            android:parentActivityName="androidapp.byco.ui.RidingActivity"
+            android:theme="@style/Theme.Byco" />
+        <activity
+            android:name="androidapp.byco.ui.StopRideActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Byco.Dialog.NoCloseOnTouchOutside" />
+        <activity
+            android:name="androidapp.byco.ui.AddRideActivity"
+            android:exported="true"
+            android:label="@string/add_ride_label"
+            android:theme="@style/Theme.Byco.Dialog.NoCloseOnTouchOutside">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="application/gpx+xml" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name="androidapp.byco.ui.ShareRideActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Byco.Dialog" />
+        <!--  Will get enabled temporarily when sharing a ride. Has to be exported to support <= P. -->
+        <activity
+            android:name="androidapp.byco.ui.SaveToFileActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_baseline_file_24_map_blue"
+            android:label="@string/save_to_file"
+            android:theme="@style/Theme.Byco.Dialog.NoCloseOnTouchOutside">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="application/gpx+xml" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name="androidapp.byco.background.RideRecorder"
+            android:exported="false"
+            android:foregroundServiceType="location"
+            android:process=":RideRecordingProcess" />
+        <service
+            android:name="androidapp.byco.background.PrefetcherJobService"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="androidapp.byco.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/fileprovider" />
+        </provider>
+
+        <!-- App specific links -->
+        <meta-data
+            android:name="otk"
+            android:value="" />
+        <meta-data
+            android:name="privacy_policy_url"
+            android:value="" />
+        <meta-data
+            android:name="help_url"
+            android:value="" />
+    </application>
+
+</manifest>

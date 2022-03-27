@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="very_dark_gray">#FF444444</color>
+    <color name="dark_gray">#FF666666</color>
+    <color name="medium_gray">#FF888888</color>
+    <color name="light_gray">#FFBBBBBB</color>
+    <color name="really_light_gray">#FFDDDDDD</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="light_blue">#FF29B6F6</color>
+
+    <color name="battery_ok">@color/light_gray</color>
+    <color name="battery_low">#FFDD4444</color>
+
+    <color name="accent">#FFC155</color>
+
+    <color name="map_background">@color/light_blue</color>
+    <color name="map_background_translucent">#AA29B6F6</color>
+
+    <color name="default_way">@color/white</color>
+    <color name="default_way_indicator">@color/light_gray</color>
+    <color name="no_bicycles_way">#FF039BE5</color>
+    <color name="no_bicycles_way_indicator">@color/map_background</color>
+    <color name="high_traffic_way">#FFD0F0FF</color>
+    <color name="high_traffic_way_indicator">#FFA0D0FF</color>
+    <color name="designated_way">#FF88DD00</color>
+    <color name="designated_way_indicator">#FFB8FF00</color>
+    <color name="bad_surface_way">#FF40C4FF</color>
+    <color name="bad_surface_way_indicator">@color/map_background</color>
+
+    <color name="cursor_color">#FFFF0000</color>
+
+    <color name="record_icon_color">#FFFF0000</color>
+
+    <color name="speed_shade">@color/black</color>
+    <color name="speed_shade_divider">@android:color/transparent</color>
+
+    <color name="text_full_brightness">@color/white</color>
+    <color name="text_minimum_brightness">@color/medium_gray</color>
+
+    <color name="ride_list_item_title_background">#66FFFFFF</color>
+
+    <color name="current_ride_color">@color/accent</color>
+    <color name="current_ride_indicator_color">#FF8105</color>
+    <color name="removed_ride">#FF4444</color>
+
+    <color name="dialogBackground">@color/white</color>
+    <color name="windowBackground">@color/really_light_gray</color>
+    <color name="web_links">@color/light_blue</color>
+
+    <color name="preferencesHighlight">@color/map_background</color>
+</resources>

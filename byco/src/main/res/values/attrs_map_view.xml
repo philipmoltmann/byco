@@ -1,0 +1,60 @@
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<resources>
+    <declare-styleable name="MapView">
+        <!-- degrees off top down -->
+        <attr name="tilt" format="float" />
+
+        <!-- web-mercator zoom level -->
+        <attr name="zoom" format="float" />
+
+        <!-- Center of map from bottom -->
+        <attr name="centerFromBottom" format="dimension|fraction" />
+
+        <!-- dp at 18 zoom level -->
+        <attr name="motorWayWidth" format="float" />
+        <!-- dp at 18 zoom level -->
+        <attr name="mayorWayWidth" format="float" />
+        <!-- dp at 18 zoom level -->
+        <attr name="residentialWayWidth" format="float" />
+        <!-- dp at 18 zoom level -->
+        <attr name="pathWidth" format="float" />
+        <!-- dp at 18 zoom level (if scale) or unscaled in px -->
+        <attr name="scaleCurrentRideWidth" format="boolean" />
+        <attr name="currentRideWidth" format="float" />
+
+        <attr name="mapColor" format="color" />
+
+        <attr name="noBicyclesWayColor" format="color" />
+        <attr name="defaultWayColor" format="color" />
+        <attr name="highTrafficWayColor" format="color" />
+        <attr name="designatedWayColor" format="color" />
+        <attr name="badSurfaceWayColor" format="color" />
+        <attr name="currentRideColor" format="color" />
+
+        <attr name="noBicyclesWayIndicatorColor" format="color" />
+        <attr name="defaultWayIndicatorColor" format="color" />
+        <attr name="highTrafficWayIndicatorColor" format="color" />
+        <attr name="designatedWayIndicatorColor" format="color" />
+        <attr name="badSurfaceWayIndicatorColor" format="color" />
+        <attr name="currentRideIndicatorColor" format="color" />
+
+        <attr name="onewayIndicator" format="reference" />
+        <!-- Frequency of one-way oneway indicators in pixels on a 256/512 pixel world map -->
+        <attr name="onewayIndicatorFrequency" format="float" />
+    </declare-styleable>
+</resources>

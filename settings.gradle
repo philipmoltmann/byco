@@ -1,0 +1,5 @@
+rootProject.name = "Byco"
+include ':byco'
+include ':gpxlib'
+include ':app'
+include ':benchmark'

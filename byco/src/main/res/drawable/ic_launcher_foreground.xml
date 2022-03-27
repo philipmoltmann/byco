@@ -1,0 +1,34 @@
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="5.6976376"
+        android:scaleY="5.6976376"
+        android:translateX="17.82"
+        android:translateY="17.82">
+        <path
+            android:fillColor="@color/black"
+            android:pathData="M0,0L0,4.3465C6.35,8.5515 12.7,4.3465 12.7,4.3465L12.7,0L0,0z" />
+        <path
+            android:fillColor="@color/white"
+            android:pathData="m6.35,0.6598c-0.5289,0 -0.9334,0.2097 -1.2137,0.629 -0.2781,0.4172 -0.4172,1.024 -0.4172,1.8205 0,0.7944 0.1391,1.4012 0.4172,1.8205 0.2802,0.4172 0.6848,0.6258 1.2137,0.6258 0.5289,0 0.9324,-0.2086 1.2105,-0.6258 0.2802,-0.4193 0.4204,-1.0261 0.4204,-1.8205 0,-0.7965 -0.1401,-1.4033 -0.4204,-1.8205C7.2824,0.8695 6.8789,0.6598 6.35,0.6598ZM6.35,1.1655c0.3308,0 0.5784,0.1622 0.7427,0.4867 0.1665,0.3224 0.2497,0.8081 0.2497,1.457 0,0.6469 -0.0832,1.1326 -0.2497,1.457C6.9284,4.8887 6.6808,5.0499 6.35,5.0499 6.0213,5.0499 5.7737,4.8887 5.6073,4.5663 5.4429,4.2418 5.3607,3.7561 5.3607,3.1093c0,-0.649 0.0822,-1.1347 0.2465,-1.457C5.7737,1.3277 6.0213,1.1655 6.35,1.1655Z" />
+    </group>
+</vector>

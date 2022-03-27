@@ -1,0 +1,43 @@
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="5.8677163"
+        android:scaleY="5.8677163"
+        android:translateX="16.74"
+        android:translateY="16.74">
+        <path
+            android:fillColor="@color/light_blue"
+            android:pathData="M0,0h12.7v12.7h-12.7z" />
+        <path
+            android:fillColor="@color/white"
+            android:pathData="M-6.0479,11.2838l14.1982,-8.1974l0.7323,1.2684l-14.1982,8.1974z" />
+        <path
+            android:fillColor="@color/white"
+            android:pathData="M5.4652,1.8424l8.1974,14.1982l-1.2684,0.7323l-8.1974,-14.1982z" />
+        <path
+            android:fillColor="@color/white"
+            android:pathData="M8.5042,8.8742l14.1982,-8.1974l0.7323,1.2684l-14.1982,8.1974z" />
+        <path
+            android:fillColor="#FF88DD00"
+            android:pathData="M9.7386,16.0406l-8.1974,-14.1982l1.2684,-0.7323l8.1974,14.1982z" />
+    </group>
+</vector>

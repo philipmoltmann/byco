@@ -1,0 +1,101 @@
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<resources>
+    <string name="app_name" translatable="false">Byco</string>
+
+    <string name="ride_duration_label">ride</string>
+    <string name="battery_pct_label">battery</string>
+    <string name="time_label">time</string>
+    <string name="battery_pct_pattern">%d%%</string>
+
+    <string name="climb_left_label">to summit</string>
+
+    <string name="recording_notification_title">Recording ride</string>
+    <string name="recording_notification_content">%s</string>
+    <string name="ongoing_recording_notification_channel">Ongoing ride recordings</string>
+    <string name="stop_ride">Stop ride</string>
+    <string name="stopping_ride_label">Stopping ride</string>
+    <string name="record_coach">Press to record ride</string>
+
+    <string name="overflow_menu_desc">More options</string>
+    <string name="rides_menu">Rides</string>
+    <string name="previous_rides_coach">Recorded rides can be found here</string>
+    <string name="reset_estimated_ride">Reset ride timer</string>
+    <string name="clear_directions">Clear route back to start</string>
+    <string name="help">Help</string>
+
+    <string name="previous_rides_label">Previous rides</string>
+    <string name="share_button_desc">Share</string>
+    <string name="delete_button_desc">Delete</string>
+    <string name="confirm_delete_ride">Delete %s?</string>
+    <string name="edit_title_desc">Edit ride title</string>
+    <string name="add_ride">Add ride</string>
+    <string name="adding_ride_label">Adding ride</string>
+    <string name="add_ride_label">Add ride</string>
+
+    <string name="unknown_ride_name">Unlabeled ride</string>
+    <string name="title_hint">Unlabeled ride</string>
+
+    <string name="search">Search</string>
+    <string name="previous_rides_query_hint">Search titles or dates…</string>
+    <string name="button_cancel">Cancel</string>
+
+    <string name="empty_view">Select the (+) button to import rides or record new rides by selecting the record button on the map screen.</string>
+
+    <string name="show_button_desc">Show</string>
+    <string name="show_on_map_coach">Show ride on map</string>
+    <string name="stop_showing_ride">Hide ride</string>
+    <string name="hide_visible_track">Hiding %s</string>
+    <string name="show_visible_track">Showing %s on map</string>
+
+    <string name="speed_unit_imperial">mph</string>
+    <string name="speed_unit_metric">km/h</string>
+
+    <string name="speed_pattern_metric">%d km/h</string>
+    <string name="speed_pattern_metric_no_units">%d</string>
+    <string name="speed_pattern_imperial">%d mph</string>
+    <string name="speed_pattern_imperial_no_units">%d</string>
+
+    <string name="location_permission_denied_warning">Location access required to show speed and map</string>
+    <string name="location_permission_rationale">Allow Byco to access your location to show a map, your speed, and record your rides.</string>
+    <string name="allow_location_access_button">Allow access</string>
+
+    <string name="get_directions_back">Get directions back</string>
+    <string name="directions_back_coach">Find direction to start of ride</string>
+    <string name="confirm_directions">Confirm Directions</string>
+    <string name="set_route">Set route</string>
+    <string name="cancel">Cancel</string>
+    <string name="open_maps">Open Maps</string>
+    <string name="route_back_to_start_of_ride">Route back to start of ride</string>
+    <string name="finding_route_back_to_start_of_ride">Finding route back to start of ride</string>
+    <string name="cannot_find_route_back_to_start_of_ride">Cannot find route back to start of ride</string>
+
+    <string name="whole_ride">Whole ride</string>
+    <string name="remove_start_and_end">Remove start and end</string>
+    <string name="share_mode_coach">Enhance privacy</string>
+
+    <string name="about">About</string>
+    <string name="close">Close</string>
+    <string name="licenses">Licenses</string>
+    <string name="cannot_find_licenses">Cannot find licences</string>
+    <string name="privacy_link">Privacy Policy</string>
+
+    <string name="save_to_file">Save to file</string>
+    <string name="save_to_file_message">Save %s to file</string>
+
+    <string name="dismiss">Dismiss</string>
+</resources>

@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright 2022 Google LLC
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipToPadding="false"
+    android:paddingLeft="16dp"
+    android:paddingTop="8dp"
+    android:paddingRight="16dp"
+    android:paddingBottom="8dp"
+    tools:context="androidapp.byco.ui.ConfirmDirectionsActivity">
+
+    <Button
+        android:id="@+id/open_mapping_app"
+        style="@style/BycoAlertDialogButton.Vertical"
+        android:layout_marginTop="-4dp"
+        android:text="@string/open_maps"
+        android:textColor="?android:attr/textColorPrimary"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@+id/button_start"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <Button
+        android:id="@+id/cancel"
+        style="@style/BycoAlertDialogButton.Vertical"
+        android:text="@string/cancel"
+        app:layout_constraintBottom_toTopOf="@+id/confirm"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@+id/button_start" />
+
+    <Button
+        android:id="@+id/confirm"
+        style="@style/BycoAlertDialogButton.Vertical"
+        android:layout_marginBottom="-4dp"
+        android:enabled="false"
+        android:text="@string/set_route"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@+id/button_start" />
+
+    <FrameLayout
+        android:id="@+id/route_preview_outline"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="-8dp"
+        android:background="@drawable/rounded_rec_background_16dp_corners"
+        android:outlineProvider="background"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/button_start"
+        app:layout_constraintHeight_min="300dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageView
+            android:id="@+id/route_preview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/map_background"
+            android:contentDescription="@string/route_back_to_start_of_ride" />
+    </FrameLayout>
+
+    <androidx.constraintlayout.widget.Group
+        android:id="@+id/progress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:constraint_referenced_ids="progress_bar,progress_subtitle" />
+
+    <ProgressBar
+        android:id="@+id/progress_bar"
+        style="?android:attr/progressBarStyleLarge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:indeterminate="true"
+        android:indeterminateTint="@color/white"
+        app:layout_constraintBottom_toTopOf="@+id/progress_subtitle"
+        app:layout_constraintEnd_toEndOf="@+id/route_preview_outline"
+        app:layout_constraintHorizontal_chainStyle="packed"
+        app:layout_constraintStart_toStartOf="@+id/route_preview_outline"
+        app:layout_constraintTop_toTopOf="@+id/route_preview_outline"
+        app:layout_constraintVertical_chainStyle="packed" />
+
+    <TextView
+        android:id="@+id/progress_subtitle"
+        style="@style/BycoText.White.Small"
+        android:layout_marginStart="32dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="32dp"
+        android:background="@drawable/rounded_rec_background_24dp_corners"
+        android:backgroundTint="@color/map_background_translucent"
+        android:padding="8dp"
+        android:text="@string/finding_route_back_to_start_of_ride"
+        android:textAlignment="center"
+        app:layout_constraintBottom_toBottomOf="@+id/route_preview_outline"
+        app:layout_constraintEnd_toEndOf="@+id/route_preview_outline"
+        app:layout_constraintStart_toStartOf="@+id/route_preview_outline"
+        app:layout_constraintTop_toBottomOf="@+id/progress_bar" />
+
+    <TextView
+        android:id="@+id/cannot_find_directions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="32dp"
+        android:layout_marginEnd="32dp"
+        android:background="@drawable/rounded_rec_background_24dp_corners"
+        android:backgroundTint="@color/map_background"
+        android:padding="8dp"
+        android:text="@string/cannot_find_route_back_to_start_of_ride"
+        android:textAlignment="center"
+        android:textColor="@color/white"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@+id/route_preview_outline"
+        app:layout_constraintEnd_toEndOf="@+id/route_preview_outline"
+        app:layout_constraintStart_toStartOf="@+id/route_preview_outline"
+        app:layout_constraintTop_toTopOf="@+id/route_preview_outline" />
+
+    <androidx.constraintlayout.widget.Barrier
+        android:id="@+id/button_start"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:barrierDirection="right"
+        tools:layout_editor_absoluteX="27dp"
+        tools:layout_editor_absoluteY="89dp" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
