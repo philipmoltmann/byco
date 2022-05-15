@@ -21,18 +21,28 @@ import io.mockk.clearAllMocks
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.spyk
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
-import java.io.*
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+import java.io.Serializable
 
 class DiskCacheTest {
     private val testScope = CoroutineScope(Job())
     private val cacheLocation = File("testData", "cache")
 
     private val retreiver: suspend CoroutineScope.(Int) -> Long = spyk({ 23 })
-    @Suppress("BlockingMethodInNonBlockingContext")
     private val writer: suspend CoroutineScope.(OutputStream, Int, Long) -> Unit = {
         out, key, value ->
             DataOutputStream(out).use {
@@ -40,7 +50,6 @@ class DiskCacheTest {
                 it.writeLong(value)
             }
     }
-    @Suppress("BlockingMethodInNonBlockingContext")
     private val reader: suspend CoroutineScope.(InputStream) -> (Pair<Int, Long>) = {
         ins ->
         DataInputStream(ins).use {
@@ -115,7 +124,6 @@ class DiskCacheTest {
         }
 
         val retreiver: suspend CoroutineScope.(Key) -> Long = spyk({ it.key.toLong() })
-        @Suppress("BlockingMethodInNonBlockingContext")
         val writer: suspend CoroutineScope.(OutputStream, Key, Long) -> Unit = {
                 out, key, value ->
             DataOutputStream(out).use {
@@ -123,7 +131,6 @@ class DiskCacheTest {
                 it.writeLong(value)
             }
         }
-        @Suppress("BlockingMethodInNonBlockingContext")
         val reader: suspend CoroutineScope.(InputStream) -> (Pair<Key, Long>) = {
                 ins ->
             DataInputStream(ins).use {
@@ -189,7 +196,9 @@ class DiskCacheTest {
         runBlocking {
             cacheWithLowMaxAge.get(1)
 
-            Thread.sleep(100)
+            withContext(Dispatchers.IO) {
+                Thread.sleep(100)
+            }
 
             clearAllMocks()
             coEvery { retreiver.invoke(any(), 1) }.returns(42)
@@ -206,7 +215,9 @@ class DiskCacheTest {
         runBlocking {
             cacheWithLowMaxAge.get(1)
 
-            Thread.sleep(100)
+            withContext(Dispatchers.IO) {
+                Thread.sleep(100)
+            }
 
             clearAllMocks()
             coEvery { retreiver.invoke(any(), 1) }.returns(42)

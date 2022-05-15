@@ -17,13 +17,28 @@
 package androidapp.byco
 
 import android.app.Application
+import androidapp.byco.background.Prefetcher
+import androidapp.byco.util.compat.getProcessNameCompat
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers.Default
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import java.io.File
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class BycoApplication : Application() {
+    val appScope by lazy { CoroutineScope(SupervisorJob() + Default + CoroutineName(BycoApplication::class.simpleName!!)) }
+
     override fun onCreate() {
         super.onCreate()
 
         // Clean shares that have not been cleared on startup
         File(cacheDir, SHARE_DIRECTORY).deleteRecursively()
+
+        // Run prefetcher in main process.
+        if (packageName == getProcessNameCompat(this)) {
+            Prefetcher[this].start()
+        }
     }
 }

@@ -21,30 +21,35 @@ import android.app.Application
 import android.content.Intent
 import androidapp.byco.data.PreviousRide
 import androidapp.byco.data.PreviousRidesRepository
+import androidapp.byco.util.BycoViewModel
+import androidapp.byco.util.plus
+import androidapp.byco.util.stateIn
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import lib.gpx.GPX_MIME_TYPE
 import java.text.DateFormat
 import java.util.Date
 
 /** ViewModel for [PreviousRidesActivity] */
-class PreviousRidesViewModel(private val app: Application, state: SavedStateHandle) :
-    AndroidViewModel(app) {
-    private val TAG = PreviousRidesRepository::class.java.simpleName
+class PreviousRidesViewModel(application: Application, private val state: SavedStateHandle) :
+    BycoViewModel(application) {
     private val KEY_TITLE_FILTER = "title_filter"
 
     private lateinit var selectFileToAddLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var addRideLauncher: ActivityResultLauncher<Intent>
 
-    val titleFilter = state.getLiveData<String?>(KEY_TITLE_FILTER, null)
+    val titleFilter = state.getStateFlow<String?>(KEY_TITLE_FILTER, null)
+
+    fun setTitleFilter(filter: String?) {
+        state[KEY_TITLE_FILTER] = filter
+    }
 
     /**
      * Ride that is currently shown.
@@ -54,15 +59,10 @@ class PreviousRidesViewModel(private val app: Application, state: SavedStateHand
     val shownRide = PreviousRidesRepository[app].rideShownOnMap
 
     /** All [PreviousRide]s currently known to the app */
-    val previousRides = object : MediatorLiveData<List<PreviousRide>>() {
-        init {
-            addSource(PreviousRidesRepository[app].previousRides) { update() }
-            addSource(titleFilter) { update() }
-        }
-
-        private fun update() {
-            value = titleFilter.value?.let { titleFilter ->
-                PreviousRidesRepository[app].previousRides.value?.filter {
+    val previousRides =
+        (PreviousRidesRepository[app].previousRides + titleFilter).map { (previousRides, titleFilter) ->
+            titleFilter?.let {
+                previousRides.filter {
                     it.title?.lowercase()?.contains(titleFilter.lowercase()) == true
                             || it.time?.let { time ->
                         DateFormat.getDateTimeInstance(
@@ -71,9 +71,8 @@ class PreviousRidesViewModel(private val app: Application, state: SavedStateHand
                         ).format(Date(time)).contains(titleFilter)
                     } == true
                 }
-            } ?: PreviousRidesRepository[app].previousRides.value
-        }
-    }
+            } ?: previousRides
+        }.stateIn(emptyList())
 
     /** Trigger the UI flow to add a ride */
     fun add() {
@@ -98,7 +97,11 @@ class PreviousRidesViewModel(private val app: Application, state: SavedStateHand
      *
      * @see shownRide
      */
-    fun show(ride: PreviousRide?) = PreviousRidesRepository[app].showOnMap(ride)
+    fun show(ride: PreviousRide?) {
+        viewModelScope.launch {
+            PreviousRidesRepository[app].showOnMap(ride)
+        }
+    }
 
     /** Change the title of a existing [ride] */
     fun changeTitle(ride: PreviousRide, newTitle: String) {
@@ -115,9 +118,10 @@ class PreviousRidesViewModel(private val app: Application, state: SavedStateHand
         addRideLauncher =
             activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
                 if (it.resultCode == Activity.RESULT_OK) {
-                    it.data?.getStringArrayListExtra(AddRideActivity.EXTRA_ADDED_FILE_NAMES)?.lastOrNull()
+                    it.data?.getStringArrayListExtra(AddRideActivity.EXTRA_ADDED_FILE_NAMES)
+                        ?.lastOrNull()
                         ?.let { lastAddedFile ->
-                            PreviousRidesRepository[app].previousRides.value?.find { ride -> ride.file.name == lastAddedFile }
+                            PreviousRidesRepository[app].previousRides.value.find { ride -> ride.file.name == lastAddedFile }
                                 .let { lastAddedRide ->
                                     recentlyAddedRide.value = lastAddedRide
                                     recentlyAddedRide.value = null

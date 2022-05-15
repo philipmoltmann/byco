@@ -18,44 +18,54 @@ package androidapp.byco.data
 
 import android.Manifest.permission.ACCESS_FINE_LOCATION
 import android.annotation.SuppressLint
-import android.app.Application
 import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Looper
 import android.os.SystemClock
+import androidapp.byco.BycoApplication
 import androidapp.byco.util.*
-import androidx.annotation.RequiresPermission
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MediatorLiveData
-import androidx.lifecycle.MutableLiveData
 import com.google.android.gms.location.*
-import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.Dispatchers.Main
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
+import lib.gpx.BasicLocation
+import lib.gpx.toBasicLocation
 import java.util.concurrent.TimeUnit.*
 import kotlin.math.abs
 
 /** Location related state */
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class LocationRepository internal constructor(
-    private val app: Application,
+    private val app: BycoApplication,
     private val LOCATION_UPDATE_INTERVAL: Long = 1000L, // ms
     private val MOVING_ACCURACY_REQUIRED: Float = 20F, // m
     private val SPEED_TO_STOP_MOVING: Float = 0.9F, // m/s (== 3 km/h)
     private val SPEED_TO_START_MOVING: Float = 1.5F, // m/s  (== 5 km/h)
-    private val COUNTRY_CODE_UPDATE_INTERVAL: Long = SECONDS.toMillis(30),
+    COUNTRY_CODE_UPDATE_INTERVAL: Long = SECONDS.toMillis(30),
     private val PASSIVE_LOCATION_ACCURACY_PREFERRED: Float = 100F, // m
     private val PASSIVE_LOCATION_INACCURATE_DELAY: Long = MINUTES.toMillis(10),
     private val PASSIVE_LOCATION_INACCURATE_INTERVAL: Long = MINUTES.toMillis(5)
-) {
+) : Repository(app) {
+    val updateHasLocationPermissionTrigger = Trigger(repositoryScope)
+
     /**
      * Does the current app have the location permission.
      *
-     * Needs to be set when changed as there is no listener.
+     * Trigger [updateHasLocationPermissionTrigger] when changed.
      */
-    val hasLocationPermission =
-        MutableLiveData(app.checkSelfPermission(ACCESS_FINE_LOCATION) == PERMISSION_GRANTED)
+    val hasLocationPermission = updateHasLocationPermissionTrigger.flow.map {
+        app.checkSelfPermission(ACCESS_FINE_LOCATION) == PERMISSION_GRANTED
+    }.stateIn(app.checkSelfPermission(ACCESS_FINE_LOCATION) == PERMISSION_GRANTED)
 
     private data class LocationUpdate(val accuracy: Float, val time: Long)
 
@@ -64,191 +74,124 @@ class LocationRepository internal constructor(
      *
      * Returns value only if [hasLocationPermission] is `true`.
      */
-    val passiveLocation = object : MediatorLiveData<Location>() {
-        private var isLiveDataActive = false
+    @SuppressLint("MissingPermission")
+    val passiveLocation = hasLocationPermission.flatMapLatest { hasLocationPermission ->
+        if (!hasLocationPermission) {
+            flowOf(null)
+        } else {
+            callbackFlow<Location?> {
+                val recentUpdates = mutableMapOf<String, LocationUpdate>()
 
-        private val recentUpdates = mutableMapOf<String, LocationUpdate>()
+                val callback = LocationListener { location ->
+                    if (location.provider == null || !location.hasAccuracy()) {
+                        return@LocationListener
+                    }
 
-        init {
-            addSource(hasLocationPermission) { hasPermission ->
-                if (hasPermission && isLiveDataActive) {
-                    startUpdates()
+                    val now = SystemClock.elapsedRealtime()
+
+                    if (location.accuracy > PASSIVE_LOCATION_ACCURACY_PREFERRED) {
+                        if (recentUpdates.values.find { locationUpdate ->
+                                locationUpdate.accuracy <= PASSIVE_LOCATION_ACCURACY_PREFERRED
+                                        && now - locationUpdate.time < PASSIVE_LOCATION_INACCURATE_DELAY
+                            } != null) {
+                            // Ignore this update, we recently had a more precise one
+                            return@LocationListener
+                        }
+
+                        if (recentUpdates.values.find { locationUpdate ->
+                                now - locationUpdate.time < PASSIVE_LOCATION_INACCURATE_INTERVAL
+                            } != null) {
+                            // Ignore this update, we recently posted a similarly imprecise one
+                            return@LocationListener
+                        }
+                    }
+
+                    recentUpdates[location.provider!!] = LocationUpdate(location.accuracy, now)
+
+                    launch {
+                        send(location)
+                    }
+                }
+
+                app.getSystemService(LocationManager::class.java).requestLocationUpdates(
+                    LocationManager.PASSIVE_PROVIDER,
+                    LOCATION_UPDATE_INTERVAL,
+                    PASSIVE_LOCATION_ACCURACY_PREFERRED,
+                    callback,
+                    Looper.getMainLooper()
+                )
+
+                awaitClose {
+                    app.getSystemService(LocationManager::class.java).removeUpdates(callback)
                 }
             }
         }
-
-        val callback = LocationListener { location ->
-            if (location.provider == null || !location.hasAccuracy()) {
-                return@LocationListener
-            }
-
-            val now = SystemClock.elapsedRealtime()
-
-            if (location.accuracy > PASSIVE_LOCATION_ACCURACY_PREFERRED) {
-                if (recentUpdates.values.find { locationUpdate ->
-                        locationUpdate.accuracy <= PASSIVE_LOCATION_ACCURACY_PREFERRED
-                                && now - locationUpdate.time < PASSIVE_LOCATION_INACCURATE_DELAY
-                    } != null) {
-                    // Ignore this update, we recently had a more precise one
-                    return@LocationListener
-                }
-
-                if (recentUpdates.values.find { locationUpdate ->
-                        now - locationUpdate.time < PASSIVE_LOCATION_INACCURATE_INTERVAL
-                    } != null) {
-                    // Ignore this update, we recently posted a similarly imprecise one
-                    return@LocationListener
-                }
-            }
-
-            recentUpdates[location.provider!!] = LocationUpdate(location.accuracy, now)
-
-            postValue(location)
-        }
-
-        @RequiresPermission(ACCESS_FINE_LOCATION)
-        private fun startUpdates() {
-            app.getSystemService(LocationManager::class.java).requestLocationUpdates(
-                LocationManager.PASSIVE_PROVIDER,
-                LOCATION_UPDATE_INTERVAL,
-                PASSIVE_LOCATION_ACCURACY_PREFERRED,
-                callback
-            )
-        }
-
-        override fun onActive() {
-            super.onActive()
-            isLiveDataActive = true
-
-            @SuppressLint("MissingPermission")
-            if (hasLocationPermission.value == true) {
-                startUpdates()
-            }
-        }
-
-        override fun onInactive() {
-            super.onInactive()
-            isLiveDataActive = false
-
-            app.getSystemService(LocationManager::class.java).removeUpdates(callback)
-        }
-    }
+    }.stateIn(null)
 
     /**
      * Current location
      *
      * Returns value only if [hasLocationPermission] is `true`.
+     *
+     * You probably want to use [smoothedLocation] to avoid jitter, spinning compasses, etc...
      */
-    val location = object : CoroutineAwareLiveData<Location>() {
-        private var isLiveDataActive = false
+    @SuppressLint("MissingPermission")
+    val rawLocation = hasLocationPermission.flatMapLatest { hasLocationPermission ->
+        if (!hasLocationPermission) {
+            flowOf(null)
+        } else {
+            callbackFlow<Location> {
+                val fusedLocationClient = LocationServices.getFusedLocationProviderClient(app)
 
-        @SuppressLint("StaticFieldLeak")
-        private val fusedLocationClient = LocationServices.getFusedLocationProviderClient(app)
+                val callback = object : LocationCallback() {
+                    override fun onLocationResult(location: LocationResult) {
+                        val lastLocation = location.lastLocation ?: return
 
-        init {
-            addSource(hasLocationPermission) { hasPermission ->
-                if (hasPermission && isLiveDataActive) {
-                    startUpdates()
-                }
-            }
-        }
+                        if (abs(
+                                SystemClock.elapsedRealtimeNanos()
+                                        - lastLocation.elapsedRealtimeNanos
+                            ) > MILLISECONDS.toNanos(LOCATION_UPDATE_INTERVAL * 4)
+                        ) {
+                            return
+                        }
 
-        val callback = object : LocationCallback() {
-            private var lastBearing = 0f
-
-            override fun onLocationResult(location: LocationResult) {
-                val lastLocation = location.lastLocation ?: return
-
-                if (abs(
-                        SystemClock.elapsedRealtimeNanos()
-                                - lastLocation.elapsedRealtimeNanos
-                    ) > MILLISECONDS.toNanos(LOCATION_UPDATE_INTERVAL * 4)
-                ) {
-                    return
-                }
-
-                liveDataScope.launch(Main.immediate) {
-                    // Update isMoving here instead making isMoving a MediatorLiveData to guarantee
-                    // it being updated before any observer is called
-                    isMoving.update(lastLocation)
-
-                    value = lastLocation.apply {
-                        // Don't change bearing if not moving
-                        if (isMoving.value != true) {
-                            bearing = lastBearing
-                        } else {
-                            lastBearing = bearing
+                        launch {
+                            send(lastLocation)
                         }
                     }
                 }
+
+                // Post one location without any restrictions to init live-data. Also don't update
+                // isMoving as this might be quite old or inaccurate
+                fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
+                    location?.let { launch { send(it) } }
+                }
+
+                fusedLocationClient.requestLocationUpdates(
+                    LocationRequest.Builder(
+                        Priority.PRIORITY_HIGH_ACCURACY,
+                        LOCATION_UPDATE_INTERVAL
+                    )
+                        .setMinUpdateIntervalMillis(LOCATION_UPDATE_INTERVAL)
+                        .setWaitForAccurateLocation(true)
+                        .build(), callback, Looper.getMainLooper()
+                )
+
+                awaitClose {
+                    fusedLocationClient.removeLocationUpdates(callback)
+                }
             }
         }
-
-        @RequiresPermission(ACCESS_FINE_LOCATION)
-        private fun startUpdates() {
-            // Post one location without any restrictions to init live-data. Also don't update
-            // isMoving as this might be quite old or inaccurate
-            fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
-                location?.let { postValue(it) }
-            }
-
-            fusedLocationClient.requestLocationUpdates(
-                LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, LOCATION_UPDATE_INTERVAL)
-                    .setMinUpdateIntervalMillis(LOCATION_UPDATE_INTERVAL)
-                    .setWaitForAccurateLocation(true)
-                    .build(), callback, Looper.getMainLooper()
-            )
-        }
-
-        override fun onActive() {
-            super.onActive()
-            isLiveDataActive = true
-
-            @SuppressLint("MissingPermission")
-            if (hasLocationPermission.value == true) {
-                startUpdates()
-            }
-        }
-
-        override fun onInactive() {
-            super.onInactive()
-            isLiveDataActive = false
-
-            fusedLocationClient.removeLocationUpdates(callback)
-        }
-    } as LiveData<Location>
+    }.stateIn(null)
 
     /**
-     * Country code of current [location]
+     * Country code of current [passiveLocation]
      */
-    val countryCode = object : AsyncLiveData<CountryCode>(IO) {
-        private var lastUpdate = 0L
-
-        init {
-            value = getCountryCodeFromLocale(app)
-
-            requestUpdateIfChanged(passiveLocation)
-        }
-
-        override suspend fun update(): CountryCode {
-            val now = System.currentTimeMillis()
-
-            return if (now - lastUpdate > COUNTRY_CODE_UPDATE_INTERVAL) {
-                lastUpdate = now
-                val newCC = getCountryCode(app, passiveLocation.value)
-
-                // Don't update CC each time passiveLocation changes as this might trigger unnecessary
-                // downstream updates
-                if (newCC != value) {
-                    newCC
-                } else {
-                    null
-                }
-            } else {
-                null
-            }
-        }
-    }
+    val countryCode = passiveLocation.filterNotNull()
+        .sample(COUNTRY_CODE_UPDATE_INTERVAL)
+        .flatMapLatest {
+            getCountryCode(app, passiveLocation.value)
+        }.stateIn(getCountryCodeFromLocale(app))
 
     /**
      * Whether the current country (not current locale) uses miles (instead of kilometers).
@@ -258,90 +201,118 @@ class LocationRepository internal constructor(
      *
      * @see isLocaleUsingMiles
      */
-    val isUsingMiles = object : MediatorLiveData<Boolean>() {
-        init {
-            addSource(countryCode) {
-                value = isCountryUsingMiles(it)
-            }
+    val isUsingMiles = countryCode.map { isCountryUsingMiles(it) }.stateIn(false)
+
+    data class SmoothedLocation(
+        val location: BasicLocation,
+        val accuracy: Float,
+        val isMoving: Boolean,
+        val speed: Float,
+        val smoothedBearing: Float
+    ) {
+        fun toLocation() = Location("from smoothed").apply {
+            latitude = location.latitude
+            longitude = location.longitude
+            accuracy = this@SmoothedLocation.accuracy
+            speed = this@SmoothedLocation.speed
+            bearing = smoothedBearing
         }
     }
 
     /**
-     * Track if phone is moving to avoid weird bearing values when standing still.
+     * Current location. This filters out jitters during initialization and standing still.
      */
-    inner class IsMovingLiveData : LiveData<Boolean>() {
-        init {
-            value = false
-        }
-
-        fun update(newLocation: Location) {
-            if (newLocation.speed < SPEED_TO_STOP_MOVING) {
-                value = false
-            } else if ((value == true || newLocation.accuracy < MOVING_ACCURACY_REQUIRED)
-                && newLocation.speed > SPEED_TO_START_MOVING
-            ) {
-                value = true
-            }
-        }
-    }
-
-    /**
-     * Whether the phone is moving at the current moment. This filters out jitters and jumps during
-     * initialization
-     */
-    val isMoving = IsMovingLiveData()
-
-    /**
-     * Bearing smoothed over the very recent movement.
-     */
-    val smoothedBearing = object : MediatorLiveData<Float>() {
-        private val SMOOTH_DISTANCE = 15f // m
+    val smoothedLocation = flow {
+        val SMOOTH_DISTANCE = 15f // m
 
         /** Recent locations with most recent location first */
-        private var recentLocations = listOf<Location>()
+        val recentLocations = mutableListOf<BasicLocation>()
 
-        init {
-            value = 0f
+        var isMoving = false
+        var smoothedBearing: Float? = null
 
-            addSource(location + isMoving) { (location, isMoving) ->
-                location ?: return@addSource
-                if (isMoving != true) {
-                    return@addSource
+        rawLocation.collect { newLocation ->
+            if (newLocation == null) {
+                emit(null)
+                return@collect
+            }
+
+            val basicNewLocation = newLocation.toBasicLocation()
+
+            val wasMoving = isMoving
+            isMoving =
+                if (newLocation.speed < SPEED_TO_STOP_MOVING) {
+                    false
+                } else if ((wasMoving || newLocation.accuracy < MOVING_ACCURACY_REQUIRED)
+                    && newLocation.speed > SPEED_TO_START_MOVING
+                ) {
+                    true
+                } else {
+                    wasMoving
                 }
 
-                var nextLoc = location
+            fun recentDistance(): Float {
                 var recentDistance = 0f
-                recentLocations = recentLocations.mapNotNullTo(mutableListOf(nextLoc)) { prevLoc ->
-                    if (recentDistance < SMOOTH_DISTANCE) {
-                        prevLoc
-                    } else {
-                        null
-                    }.also {
-                        if (nextLoc != null) {
-                            recentDistance += prevLoc.distanceTo(nextLoc!!)
-                        }
-                        nextLoc = prevLoc
-                    }
+
+                ((recentLocations.size - 1) downTo 1).forEach { i ->
+                    recentDistance += recentLocations[i - 1].distanceTo(recentLocations[i])
                 }
 
-                if (recentDistance >= SMOOTH_DISTANCE) {
-                    value = recentLocations.last().bearingTo(recentLocations.first())
+                return recentDistance
+            }
+
+            // Keep recent locations with a path length (aka. recentDistance) of just over
+            // SMOOTH_DISTANCE, but not more.
+            if (isMoving && recentLocations.lastOrNull()?.distanceTo(newLocation)
+                    ?.let { it > SMOOTH_DISTANCE / 10 } != false
+            ) {
+                recentLocations.add(basicNewLocation)
+
+                var recentDistanceLeft = recentDistance()
+
+                while (recentLocations.size >= 2) {
+                    val removeDistance = recentLocations[0].distanceTo(recentLocations[1])
+                    if (recentDistanceLeft - removeDistance < SMOOTH_DISTANCE) {
+                        break
+                    }
+
+                    recentLocations.removeAt(0)
+                    recentDistanceLeft -= removeDistance
                 }
             }
+
+            smoothedBearing = if (recentDistance() >= SMOOTH_DISTANCE) {
+                // Don't use the reported bearing. It tends to just spin around, hence rather
+                // just use the bearing from the recent path.
+                recentLocations.first().bearingTo(recentLocations.last())
+            } else if (smoothedBearing != null) {
+                // No recent path, at least avoid changing the bearing.
+                smoothedBearing!!
+            } else {
+                newLocation.bearing
+            }
+
+            emit(
+                SmoothedLocation(
+                    basicNewLocation,
+                    newLocation.accuracy,
+                    isMoving,
+                    newLocation.speed,
+                    smoothedBearing!!
+                )
+            )
         }
-    }
+    }.stateIn(null)
 
     /** Speed */
-    val speed = object : MediatorLiveData<Speed>() {
-        init {
-            addSource(location) { location ->
-                if (location != null && !location.speed.isNaN()) {
-                    value = Speed(location.speed)
-                }
-            }
+    val speed = smoothedLocation.map { location ->
+        if (location != null && !location.speed.isNaN()) {
+            Speed(location.speed)
+        } else {
+            null
         }
-    }
+    }.stateIn(Speed(0f))
 
     companion object :
-        SingleParameterSingletonOf<Application, LocationRepository>({ LocationRepository(it) })
+        SingleParameterSingletonOf<BycoApplication, LocationRepository>({ LocationRepository(it) })
 }

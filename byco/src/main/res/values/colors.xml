@@ -24,6 +24,7 @@
     <color name="light_gray">#FFBBBBBB</color>
     <color name="really_light_gray">#FFDDDDDD</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="medium_green">#FF88DD00</color>
     <color name="light_blue">#FF29B6F6</color>
 
     <color name="battery_ok">@color/light_gray</color>
@@ -40,7 +41,7 @@
     <color name="no_bicycles_way_indicator">@color/map_background</color>
     <color name="high_traffic_way">#FFD0F0FF</color>
     <color name="high_traffic_way_indicator">#FFA0D0FF</color>
-    <color name="designated_way">#FF88DD00</color>
+    <color name="designated_way">@color/medium_green</color>
     <color name="designated_way_indicator">#FFB8FF00</color>
     <color name="bad_surface_way">#FF40C4FF</color>
     <color name="bad_surface_way_indicator">@color/map_background</color>

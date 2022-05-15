@@ -65,7 +65,6 @@ class OpenTopographyDataProvider private constructor(private val app: Applicatio
         maxLat: BigDecimal,
         maxLon: BigDecimal,
     ): String {
-        @Suppress("BlockingMethodInNonBlockingContext")
         return withContext(Dispatchers.IO) {
             var data: String? = null
             var incrementalBackoffTimeout = 20L

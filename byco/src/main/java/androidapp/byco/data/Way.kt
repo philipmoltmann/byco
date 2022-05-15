@@ -91,11 +91,7 @@ class Way(
             return true
         }
 
-        if (indexOfA == nodesArray.size - 1 && !isOpen && nodesArray[0] == b) {
-            return true
-        }
-
-        return false
+        return indexOfA == nodesArray.size - 1 && !isOpen && nodesArray[0] == b
     }
 
     /**

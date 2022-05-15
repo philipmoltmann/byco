@@ -18,3 +18,8 @@ local.properties
 /gpxplayer/
 /.idea/shelf/
 /.idea/kotlinc.xml
+/.idea/deploymentTargetDropDown.xml
+/.idea/migrations.xml
+/.idea/inspectionProfiles/Project_Default.xml
+/.idea/appInsightsSettings.xml
+/.idea/androidTestResultsUserPreferences.xml

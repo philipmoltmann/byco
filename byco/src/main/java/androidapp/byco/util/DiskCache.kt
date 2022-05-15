@@ -16,19 +16,26 @@
 
 package androidapp.byco.util
 
-import android.os.FileObserver.*
-import androidapp.byco.util.compat.createFileObserverCompat
 import androidx.annotation.GuardedBy
 import androidx.annotation.VisibleForTesting
-import androidx.lifecycle.LiveData
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import lib.gpx.DebugLog
-import java.io.*
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
+import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import kotlin.math.abs
 import kotlin.random.Random
 
@@ -44,6 +51,7 @@ import kotlin.random.Random
  * @param writer Store values to disk
  * @param reader Read values from disk
  */
+@OptIn(DelicateCoroutinesApi::class)
 class DiskCache<K, V>(
     private val location: File,
     private val maxCacheAgeMs: Long,
@@ -61,8 +69,11 @@ class DiskCache<K, V>(
 
     /** Synchronize this class */
     private val paralellismLimiter = Semaphore(numParallelLockedKeys)
-    private val lock = ReentrantLock()
-    private val cond = lock.newCondition()
+    private val lock = Mutex()
+
+    @GuardedBy("lock")
+    private val waiters = mutableSetOf<Mutex>()
+    private val dataModifiedTrigger = Trigger(GlobalScope)
 
     /** currently locked keys */
     @GuardedBy("lock")
@@ -82,57 +93,96 @@ class DiskCache<K, V>(
         }
     }
 
+
+    private suspend fun Mutex.wait(owner: Any? = null) {
+        assert(isLocked)
+        val waiter = Mutex()
+        waiter.lock(waiters)
+
+        waiters.add(waiter)
+        try {
+            unlock(owner)
+            try {
+                // Lock waiter again. This blocks unless [signal] has already or will eventually
+                // unlock it.
+                waiter.lock("wait")
+            } finally {
+                withContext(NonCancellable) {
+                    lock(owner)
+                }
+            }
+        } finally {
+            waiters.remove(waiter)
+        }
+    }
+
+    private fun Mutex.signal() {
+        assert(isLocked)
+
+        // Unlock all waiters added in [wait].
+        waiters.forEach {
+            it.unlock(waiters)
+        }
+        waiters.clear()
+    }
+
     /**
      * Always grab a lockKey before accessing data with key. These locks are not fair, but super
      * granular.
-     *
-     * TODO: Figure out a way to suspend when waiting
      */
-    private fun withKeyLocked(key: K, skipIfLocked: Boolean = false) = object : AutoCloseable {
-        init {
-            lock.withLock {
-                while (allLockRequested || lockedKeys.contains(key)) {
-                    if (skipIfLocked) {
-                        throw Exception("Already locked")
-                    }
-                    cond.await()
-                }
-                lockedKeys.add(key)
-            }
-        }
+    private suspend fun <T> withKeyLocked(
+        key: K,
+        skipIfLocked: Boolean = false,
+        block: suspend () -> T
+    ): T {
+        val lockOwner = Any() to key
 
-        override fun close() {
-            lock.withLock {
-                lockedKeys.remove(key)
-                cond.signal()
+        lock.withLock(owner = lockOwner) {
+            while (allLockRequested || lockedKeys.contains(key)) {
+                if (skipIfLocked) {
+                    throw SkippedBecauseLockedException("Already locked")
+                }
+                lock.wait(owner = lockOwner)
+            }
+
+            lockedKeys.add(key)
+        }
+        try {
+            return block()
+        } finally {
+            withContext(NonCancellable) {
+                lock.withLock(owner = lockOwner) {
+                    lockedKeys.remove(key)
+                    lock.signal()
+                }
             }
         }
     }
 
+    class SkippedBecauseLockedException(message: String) : Exception(message)
+
     /**
      * Clear all data from cache.
      */
-    @Suppress("BlockingMethodInNonBlockingContext")
     @VisibleForTesting
     suspend fun clear() {
+        val clearOwner = Any() to "clear"
+
         withContext(IO) {
-            lock.withLock {
+            lock.withLock(owner = clearOwner) {
                 while (allLockRequested) {
-                    cond.await()
+                    lock.wait(owner = clearOwner)
                 }
 
                 allLockRequested = true
-
                 try {
                     // Wait until all individual lock holders are gone
                     while (lockedKeys.isNotEmpty()) {
-                        cond.await()
+                        lock.wait(owner = clearOwner)
                     }
                 } catch (t: Throwable) {
-                    lock.withLock {
-                        allLockRequested = false
-                        cond.signal()
-                    }
+                    allLockRequested = false
+                    lock.signal()
 
                     throw t
                 }
@@ -143,11 +193,13 @@ class DiskCache<K, V>(
                     cachedDataDir.deleteRecursively()
                 }
             } finally {
-                lock.withLock {
+                lock.withLock(owner = clearOwner) {
                     allLockRequested = false
-                    cond.signal()
+                    lock.signal()
                 }
             }
+
+            dataModifiedTrigger.trigger()
         }
     }
 
@@ -160,7 +212,7 @@ class DiskCache<K, V>(
      * @return the cached or new value
      */
     suspend fun preFetch(key: K, skipIfLocked: Boolean = false) {
-        if (File(location, key.hashCode().toString()).exists()) {
+        if (hasData(key).first()) {
             return
         }
 
@@ -175,35 +227,11 @@ class DiskCache<K, V>(
     }
 
     /**
-     * [LiveData] whether the data for a certain key is very likely in the cache. This is not a 100%
+     * `Flow` whether the data for a certain key is very likely in the cache. This is not a 100%
      * guarantee, but very likely.
      */
-    fun hasData(key: K) = object : AsyncLiveData<Boolean>(dispatcher = IO) {
-        private val directoryObserver =
-            createFileObserverCompat(location) { event: Int, _: String? ->
-                if (event in setOf(CLOSE_WRITE, MOVED_TO, MOVED_FROM, DELETE)) {
-                    requestUpdate()
-                }
-            }
-
-        override fun onActive() {
-            super.onActive()
-
-            directoryObserver.startWatching()
-            requestUpdate()
-        }
-
-        override fun onInactive() {
-            super.onInactive()
-
-            directoryObserver.stopWatching()
-        }
-
-        override suspend fun update(): Boolean {
-            return withKeyLocked(key).use {
-                File(location, key.hashCode().toString()).exists()
-            }
-        }
+    fun hasData(key: K) = dataModifiedTrigger.flow.map {
+        File(location, key.hashCode().toString()).exists()
     }
 
     /**
@@ -214,9 +242,8 @@ class DiskCache<K, V>(
     suspend fun get(key: K, skipIfLocked: Boolean = false): V? {
         val cachedDataFileDir = File(location, key.hashCode().toString())
 
-        @Suppress("BlockingMethodInNonBlockingContext")
         return withContext(IO) {
-            withKeyLocked(key, skipIfLocked).use {
+            withKeyLocked(key, skipIfLocked) {
                 if (cachedDataFileDir.exists()) {
                     try {
                         cachedDataFileDir.listFiles()?.forEach { candidateFile ->
@@ -225,7 +252,7 @@ class DiskCache<K, V>(
                                     val (candidateKey, value) = reader(candidateStream)
 
                                     if (candidateKey == key) {
-                                        return@withContext value
+                                        return@withKeyLocked value
                                     }
                                 }
                             } catch (e: InvalidCachedDataFileException) {
@@ -242,7 +269,7 @@ class DiskCache<K, V>(
                             cachedDataFileDir.deleteRecursively()
 
                             // Reload deleted data
-                            launch(IO) { preFetch(key) }
+                            launch { preFetch(key) }
                         }
                     }
                 }
@@ -252,12 +279,17 @@ class DiskCache<K, V>(
                 }
                 cachedDataFileDir.mkdirs()
 
-                File.createTempFile(
-                    "cached-",
-                    ".dat",
-                    cachedDataFileDir
-                ).outputStream().buffered().use { newStream ->
-                    writer(newStream, key, newValue)
+                // Don't partially write files.
+                withContext(NonCancellable) {
+                    File.createTempFile(
+                        "cached-",
+                        ".dat",
+                        cachedDataFileDir
+                    ).outputStream().buffered().use { newStream ->
+                        writer(newStream, key, newValue)
+                    }
+
+                    dataModifiedTrigger.trigger()
                 }
 
                 newValue

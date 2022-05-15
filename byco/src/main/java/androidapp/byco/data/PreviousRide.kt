@@ -16,12 +16,18 @@
 
 package androidapp.byco.data
 
-import android.app.Application
-import androidapp.byco.util.observeAsChannel
+import androidapp.byco.BycoApplication
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.consume
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import lib.gpx.*
+import lib.gpx.GpxParser
+import lib.gpx.MapArea
+import lib.gpx.RecordedLocation
+import lib.gpx.TRACK_ZIP_ENTRY
+import lib.gpx.Track
+import lib.gpx.findFirstNotNull
 import java.io.File
 import java.io.OutputStream
 import java.util.zip.ZipInputStream
@@ -57,11 +63,15 @@ class PreviousRide(
         }
 
         return file.name == (other as PreviousRide).file.name
-                && file.lastModified() == other.lastModified
+                && lastModified == other.lastModified
     }
 
     override fun hashCode(): Int {
         return file.name.hashCode()
+    }
+
+    override fun toString(): String {
+        return file.name
     }
 
     companion object {
@@ -71,6 +81,7 @@ class PreviousRide(
                     when (entry.name) {
                         TRACK_ZIP_ENTRY ->
                             GpxParser(zipIs).also { it.parse() }
+
                         else ->
                             null
                     }
@@ -98,86 +109,86 @@ class PreviousRide(
  * @param removeEnd Meters to remove from end of ride
  */
 suspend fun OutputStream.writePreviousRide(
-    app: Application,
+    app: BycoApplication,
     ride: PreviousRide,
     title: String? = ride.title,
     removeStart: Float = 0f,
     removeEnd: Float = 0f,
 ) {
-    PreviousRidesRepository[app].getTrack(ride).observeAsChannel().consume {
-        withContext(Dispatchers.IO) {
-            GpxSerializer(this@writePreviousRide, title, ride.time).use { gpx ->
-                var isFirstSegment = true
-                val track = receive()
+    val track = PreviousRidesRepository[app].getTrack(ride).filterNotNull().first()
 
-                // find first and last loc to write
-                var firstLocToWrite: RecordedLocation? = null
-                var distance = 0f
-                for (segment in track.segments) {
-                    var lastLoc: RecordedLocation? = null
-                    for (loc in segment) {
-                        if (distance >= removeStart) {
-                            firstLocToWrite = loc
-                            break
-                        }
+    // Do not cancel while overwriting file to avoid corruption.
+    withContext(Dispatchers.IO + NonCancellable) {
+        GpxSerializer(this@writePreviousRide, title, ride.time).use { gpx ->
+            var isFirstSegment = true
 
-                        if (lastLoc != null) {
-                            distance += lastLoc.distanceTo(loc)
-                        }
-                        lastLoc = loc
-                    }
-
-                    if (firstLocToWrite != null) {
+            // find first and last loc to write
+            var firstLocToWrite: RecordedLocation? = null
+            var distance = 0f
+            for (segment in track.segments) {
+                var lastLoc: RecordedLocation? = null
+                for (loc in segment) {
+                    if (distance >= removeStart) {
+                        firstLocToWrite = loc
                         break
                     }
+
+                    if (lastLoc != null) {
+                        distance += lastLoc.distanceTo(loc)
+                    }
+                    lastLoc = loc
                 }
 
-                var lastLocToWrite: RecordedLocation? = null
-                distance = 0f
-                for (segment in track.segments.asReversed()) {
-                    var lastLoc: RecordedLocation? = null
-                    for (loc in segment.asReversed()) {
-                        if (distance >= removeEnd) {
-                            lastLocToWrite = loc
-                            break
-                        }
+                if (firstLocToWrite != null) {
+                    break
+                }
+            }
 
-                        if (lastLoc != null) {
-                            distance += lastLoc.distanceTo(loc)
-                        }
-                        lastLoc = loc
-                    }
-
-                    if (lastLocToWrite != null) {
+            var lastLocToWrite: RecordedLocation? = null
+            distance = 0f
+            for (segment in track.segments.asReversed()) {
+                var lastLoc: RecordedLocation? = null
+                for (loc in segment.asReversed()) {
+                    if (distance >= removeEnd) {
+                        lastLocToWrite = loc
                         break
                     }
+
+                    if (lastLoc != null) {
+                        distance += lastLoc.distanceTo(loc)
+                    }
+                    lastLoc = loc
                 }
 
-                var hasFoundFirstLoc = false
-                var hasFoundLastLoc = false
-                track.segments.forEach { segment ->
-                    if (isFirstSegment) {
-                        isFirstSegment = false
-                    } else {
-                        gpx.newSegment()
+                if (lastLocToWrite != null) {
+                    break
+                }
+            }
+
+            var hasFoundFirstLoc = false
+            var hasFoundLastLoc = false
+            track.segments.forEach { segment ->
+                if (isFirstSegment) {
+                    isFirstSegment = false
+                } else {
+                    gpx.newSegment()
+                }
+
+                segment.forEach { loc ->
+                    // instance comparison as a track might go through same physical location
+                    // twice
+                    if (loc === firstLocToWrite) {
+                        hasFoundFirstLoc = true
                     }
 
-                    segment.forEach { loc ->
-                        // instance comparison as a track might go through same physical location
-                        // twice
-                        if (loc === firstLocToWrite) {
-                            hasFoundFirstLoc = true
-                        }
+                    if (hasFoundFirstLoc && !hasFoundLastLoc) {
+                        gpx.addPoint(loc)
+                    }
 
-                        if (hasFoundFirstLoc && !hasFoundLastLoc) {
-                            gpx.addPoint(loc)
-                        }
-
-                        // instance comparison as a track might go through same physical location
-                        // twice
-                        if (loc === lastLocToWrite) {
-                            hasFoundLastLoc = true
-                        }
+                    // instance comparison as a track might go through same physical location
+                    // twice
+                    if (loc === lastLocToWrite) {
+                        hasFoundLastLoc = true
                     }
                 }
             }

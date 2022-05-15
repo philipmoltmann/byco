@@ -17,31 +17,60 @@
 package androidapp.byco.background
 
 import android.app.job.JobParameters
-import android.app.job.JobService
-import androidapp.byco.background.Prefetcher.ProcessPriority.BACKGROUND
+import android.util.Log
+import androidapp.byco.util.BycoJobService
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.launch
 
 /**
- * Job that runs the [Prefetcher] in the [BACKGROUND]
+ * Job to run the [Prefetcher]
  */
-class PrefetcherJobService : JobService() {
+@OptIn(ExperimentalCoroutinesApi::class)
+class PrefetcherJobService : BycoJobService(), LifecycleOwner {
+    private val TAG = PrefetcherJobService::class.java.simpleName
+
+    var isFinished = false
+
     override fun onStartJob(params: JobParameters?): Boolean {
-        val prefetcher = Prefetcher[application]
+        super.onStartJob(params)
 
-        prefetcher.registerFinishedListener (object : Prefetcher.OnFinishedCallback {
-            override fun onFinished() {
-                jobFinished(params, false)
-                prefetcher.unregisterFinishedListener(this)
+        // The prefetcher is started by the [BycoApplication] as the [BycoJobService] sets the
+        // [ProcessPriority] to [BACKGROUND]
+
+        lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_START)
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    Prefetcher[app].isPrefetchWorkPending.filterNotNull().filter { !it }
+                        .collect {
+                            isFinished = true
+
+                            Log.i(TAG, "No more prefetching work")
+                            jobFinished(params, false)
+                            lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+                        }
+                }
             }
-        })
+        }
 
-        prefetcher.start(BACKGROUND)
-
-        return true
+        return !isFinished
     }
 
     override fun onStopJob(params: JobParameters?): Boolean {
-        Prefetcher[application].stop(BACKGROUND)
+        super.onStopJob(params)
 
-        return true
+        lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+
+        return !isFinished
     }
+
+    override val lifecycle = LifecycleRegistry(this)
 }

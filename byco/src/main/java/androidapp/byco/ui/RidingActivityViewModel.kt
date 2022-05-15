@@ -25,31 +25,60 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.net.Uri
 import android.widget.Toast
-import androidapp.byco.data.*
+import androidapp.byco.data.ElevationDataRepository
+import androidapp.byco.data.LocationRepository
+import androidapp.byco.data.MapData
+import androidapp.byco.data.MapDataRepository
+import androidapp.byco.data.PhoneStateRepository
+import androidapp.byco.data.PreviousRidesRepository
+import androidapp.byco.data.RideEstimator
+import androidapp.byco.data.RideRecordingRepository
+import androidapp.byco.data.RouteFinderRepository
+import androidapp.byco.data.restrictTo
 import androidapp.byco.lib.R
-import androidapp.byco.util.AsyncLiveData
-import androidapp.byco.util.addSources
+import androidapp.byco.ui.views.ElevationView
+import androidapp.byco.util.BycoViewModel
 import androidapp.byco.util.compat.getApplicationInfoCompat
 import androidapp.byco.util.compat.getParcelableArrayListExtraCompat
 import androidapp.byco.util.plus
+import androidapp.byco.util.stateIn
+import androidapp.byco.util.whenNotChangedFor
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.annotation.MainThread
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.*
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers.Main
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import lib.gpx.*
+import lib.gpx.BasicLocation
+import lib.gpx.MapArea
+import lib.gpx.RecordedLocation
+import lib.gpx.Track
+import lib.gpx.toBasicLocation
+import kotlin.time.Duration.Companion.seconds
 
 /** ViewModel for [RidingActivity] */
-class RidingActivityViewModel(private val app: Application, val state: SavedStateHandle) :
-    AndroidViewModel(app) {
+@OptIn(ExperimentalCoroutinesApi::class)
+class RidingActivityViewModel(application: Application, val state: SavedStateHandle) :
+    BycoViewModel(application) {
     private val KEY_DIRECTIONS_BACK = "KEY_DIRECTIONS_BACK"
 
-    private val mapArea = object : MutableLiveData<MapArea>() {}
-    private val animatedLocation = object : MutableLiveData<Location>() {}
+    private val mapAreaUpdate = Channel<MapArea>()
+    private val mapArea = mapAreaUpdate.receiveAsFlow().stateIn(null)
+    private val animatedLocation = MutableStateFlow<Location?>(null)
 
     private lateinit var getLocationPermissionLauncher: ActivityResultLauncher<String>
     private lateinit var getDirectionsBackLauncher: ActivityResultLauncher<Intent>
@@ -62,19 +91,14 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
     val batteryLevel = PhoneStateRepository[app].batteryLevel
 
     /** The current location */
-    val currentLocation = LocationRepository[app].location
+    val smoothedLocation = LocationRepository[app].smoothedLocation
 
     /** The current speed */
     val speed = LocationRepository[app].speed
 
-    /** Is the phone currently moving */
-    val isMoving = LocationRepository[app].isMoving
-
-    /** Bearing smoothed over the very recent movement */
-    val smoothedBearing = LocationRepository[app].smoothedBearing
-
     /** Is there a previously recorded ride */
-    val hasPreviousRide = PreviousRidesRepository[app].previousRides.map { it.isNotEmpty() }
+    val hasPreviousRide =
+        PreviousRidesRepository[app].previousRides.map { it.isNotEmpty() }.stateIn(false)
 
     /** Is the current country using miles and mph? */
     val isUsingMiles = LocationRepository[app].isUsingMiles
@@ -89,117 +113,101 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
     private val recordedRideDuration = RideRecordingRepository[app].rideTime
 
     /** Directions back (if generated */
-    private val directionsBack = state.getLiveData<ArrayList<BasicLocation>?>(KEY_DIRECTIONS_BACK)
+    private val directionsBack =
+        state.getStateFlow<ArrayList<BasicLocation>?>(KEY_DIRECTIONS_BACK, null)
 
     /** [MapData] to show on map */
-    val mapData = object : MediatorLiveData<MapData>() {
-        private var currentMapDataLiveData: LiveData<MapData>? =
-            null
-
-        init {
-            addSource(mapArea) { newMapArea ->
-                currentMapDataLiveData?.let { removeSource(it) }
-                currentMapDataLiveData =
-                    MapDataRepository[app].getMapData(newMapArea, true)
-                        .also { newMapDataLiveData -> addSource(newMapDataLiveData) { value = it } }
+    private var hadData = false
+    val mapData = mapArea.flatMapLatest { newMapArea ->
+        if (newMapArea == null) {
+            hadData = false
+            flowOf(emptySet())
+        } else {
+            MapDataRepository[app].getMapData(newMapArea, !hadData).onEach {
+                hadData = it.isNotEmpty()
             }
         }
-    } as LiveData<Set<Way>>
+    }.stateIn(emptySet())
 
     private val hasLocationPermission = LocationRepository[app].hasLocationPermission
-    private val shouldShowLocationPermissionRationale = MutableLiveData<Boolean>()
+    private val shouldShowLocationPermissionRationale = MutableStateFlow(false)
 
-    val shouldShowLocationPermissionPrompt = hasLocationPermission.map { !it }
+    val shouldShowLocationPermissionPrompt = hasLocationPermission.map { !it }.stateIn(false)
 
     /** Is currently a track (from a previous ride) shown? */
-    val isShowingTrack = PreviousRidesRepository[app].visibleTrack.map { it != null }
+    val isShowingTrack = PreviousRidesRepository[app].visibleTrack.map { it != null }.stateIn(false)
 
     /** Is currently the directions back shown */
     val isShowingDirectionsBack =
         (isShowingTrack + directionsBack).map { (isShowingTrack, directionsBack) ->
-            (isShowingTrack == null || isShowingTrack == false) && directionsBack != null
-        }
+            !isShowingTrack && directionsBack != null
+        }.stateIn(false)
 
     /**
      * Track to be shown overlaid on map
      *
      * @see hideTrack
      */
-    val visibleTrack = object : AsyncLiveData<TrackAsNodes>(setNullValues = true) {
-        init {
-            requestUpdateIfChanged(
-                isShowingDirectionsBack,
-                PreviousRidesRepository[app].visibleTrack, mapArea,
-                directionsBack
-            )
-        }
-
-        override suspend fun update(): TrackAsNodes? {
+    val visibleTrack =
+        (isShowingDirectionsBack + PreviousRidesRepository[app].visibleTrack + mapArea
+            .onStart { emit(null) } + directionsBack).map { (_, visibleTrack, mapArea, directionsBack) ->
             // Unset directions back if previous ride is set
-            if (PreviousRidesRepository[app].visibleTrack.value != null) {
+            if (visibleTrack != null) {
                 withContext(Main) {
-                    if (directionsBack.value != null) {
-                        directionsBack.value = null
+                    if (directionsBack != null) {
+                        state[KEY_DIRECTIONS_BACK] = null
                     }
                 }
             }
 
-            val area = mapArea.value ?: return null
-
-            return if (directionsBack.value != null) {
-                Track(listOf(directionsBack.value!!.map {
-                    RecordedLocation(
-                        it.latitude,
-                        it.longitude,
-                        null,
-                        null
-                    )
-                }))
+            if (mapArea == null) {
+                null
             } else {
-                PreviousRidesRepository[app].visibleTrack.value
-            }?.restrictTo(area)
-        }
-    }
+                if (directionsBack != null) {
+                    Track(listOf(directionsBack.map {
+                        RecordedLocation(
+                            it.latitude, it.longitude, null, null
+                        )
+                    }))
+                } else {
+                    visibleTrack
+                }?.restrictTo(mapArea)
+            }
+        }.stateIn(null)
 
     /** The bearing to the track or `null` if it should not be shown. */
-    val bearingToTrack = object : MediatorLiveData<Float>() {
-        init {
-            addSources(
-                animatedLocation,
-                PreviousRidesRepository[app].closestLocationOnTrack
-            ) {
-                val MIN_DISTANCE_TO_TRACK = 70f
+    val bearingToTrack =
+        (animatedLocation + PreviousRidesRepository[app].closestLocationOnTrack).map { (location, closestLocationWrapper) ->
+            val MIN_DISTANCE_TO_TRACK = 70f
 
-                val location = animatedLocation.value
-                val closestLocationWrapper =
-                    PreviousRidesRepository[app].closestLocationOnTrack.value
+            if (location == null || closestLocationWrapper == null) {
+                null
+            } else {
+                val (_, closestLocationOnTrack) = closestLocationWrapper
+                val currentLocation = location.toBasicLocation()
 
-                value = if (location == null || closestLocationWrapper == null) {
-                    null
-                } else {
-                    val (_, closestLocationOnTrack) = closestLocationWrapper
-                    val currentLocation = location.toBasicLocation()
-
-                    if (currentLocation.distanceTo(closestLocationOnTrack) > MIN_DISTANCE_TO_TRACK) {
-                        (currentLocation.bearingTo(closestLocationOnTrack) - location.bearing).let {
-                            if (it <= 180) {
-                                it
-                            } else {
-                                -180 + (it - 180)
-                            }
+                if (currentLocation.distanceTo(closestLocationOnTrack) > MIN_DISTANCE_TO_TRACK) {
+                    (currentLocation.bearingTo(closestLocationOnTrack) - location.bearing).let {
+                        if (it <= 180) {
+                            it
+                        } else {
+                            -180 + (it - 180)
                         }
-                    } else {
-                        null
                     }
+                } else {
+                    null
                 }
             }
         }
-    }
 
     /**
      * Elevation profile of current climb
      */
-    val currentClimbElevationProfile = ElevationDataRepository[app].currentClimbElevationProfile
+    val currentClimbElevationProfile =
+        ElevationDataRepository[app].currentClimbElevationProfile
+            .whenNotChangedFor(5.seconds) { a, b ->
+                a.second == b.second
+            }.stateIn(0f to ElevationView.NO_DATA)
 
     /**
      * Meters left in current climb
@@ -209,19 +217,10 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
     /** Is an estimated ride ongoing */
     val isEstimatedRideOngoing = rideEstimator.isOngoing
 
-    val rideDuration = object : MediatorLiveData<Duration?>() {
-        init {
-            addSources(rideEstimator.duration, recordedRideDuration) { update() }
+    val rideDuration =
+        (rideEstimator.duration + recordedRideDuration).map { (rideEstimatorDuration, recordedRideDuration) ->
+            rideEstimatorDuration ?: recordedRideDuration
         }
-
-        private fun update() {
-            value = if (recordedRideDuration.value != null) {
-                recordedRideDuration.value
-            } else {
-                rideEstimator.duration.value
-            }
-        }
-    }
 
     val rideStart = RouteFinderRepository[app].rideStart
 
@@ -229,11 +228,15 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
      * Set [boundaries] currently visible on map
      */
     fun setMapBoundaries(boundaries: MapArea) {
-        mapArea.value = boundaries
+        viewModelScope.launch {
+            mapAreaUpdate.send(boundaries)
+        }
     }
 
     fun setAnimatedLocation(location: Location) {
-        animatedLocation.value = location
+        viewModelScope.launch {
+            animatedLocation.emit(location)
+        }
     }
 
     /**
@@ -251,11 +254,9 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
     fun showHelp(activity: Activity) {
         activity.startActivity(
             Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse(
+                Intent.ACTION_VIEW, Uri.parse(
                     app.packageManager.getApplicationInfoCompat(
-                        app.packageName,
-                        PackageManager.GET_META_DATA
+                        app.packageName, PackageManager.GET_META_DATA
                     ).metaData.getString("help_url")
                 )
             )
@@ -300,7 +301,9 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
      * @see visibleTrack
      */
     fun hideTrack() {
-        PreviousRidesRepository[app].showOnMap(null)
+        viewModelScope.launch {
+            PreviousRidesRepository[app].showOnMap(null)
+        }
     }
 
     /**
@@ -309,34 +312,44 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
      * @see getDirectionsBack
      */
     fun clearDirectionsBack() {
-        directionsBack.value = null
+        state[KEY_DIRECTIONS_BACK] = null
     }
 
-    /*
+    /**
      * Reset the estimated ride
      */
     fun resetEstimatedRide() {
-        rideEstimator.clear()
+        viewModelScope.launch {
+            rideEstimator.clear()
+        }
     }
 
     fun onRidingActivityStarted() {
-        rideEstimator.onActivityStarted()
+        viewModelScope.launch {
+            rideEstimator.onActivityStarted()
+        }
+
         resumeRecordingIfPaused()
     }
 
     fun onRidingActivityStopped() {
-        rideEstimator.onActivityStopped()
+        viewModelScope.launch {
+            rideEstimator.onActivityStopped()
+        }
     }
 
     /** Allow this view model to use the passed [activity] for start-with-activity-result */
     fun registerActivityResultsContracts(activity: AppCompatActivity) {
         getLocationPermissionLauncher =
             activity.registerForActivityResult(RequestPermission()) { granted ->
-                shouldShowLocationPermissionRationale.value =
-                    activity.shouldShowRequestPermissionRationale(ACCESS_FINE_LOCATION)
+                viewModelScope.launch {
+                    shouldShowLocationPermissionRationale.emit(
+                        activity.shouldShowRequestPermissionRationale(ACCESS_FINE_LOCATION)
+                    )
+                }
 
                 if (granted) {
-                    hasLocationPermission.value = true
+                    LocationRepository[app].updateHasLocationPermissionTrigger.trigger()
                 } else {
                     Toast.makeText(
                         app,
@@ -350,18 +363,24 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
             activity.registerForActivityResult(StartActivityForResult()) { result: ActivityResult ->
                 if (result.resultCode == RESULT_OK) {
                     // Unload any currently shown track
-                    PreviousRidesRepository[app].showOnMap(null)
+                    viewModelScope.launch {
+                        PreviousRidesRepository[app].showOnMap(null)
 
-                    // Set directions back as track
-                    directionsBack.value = result.data!!.getParcelableArrayListExtraCompat(
-                        ConfirmDirectionsActivityViewModel.EXTRA_DIRECTIONS,
-                        BasicLocation::class.java
-                    )
+                        // Set directions back as track
+                        state[KEY_DIRECTIONS_BACK] =
+                            result.data!!.getParcelableArrayListExtraCompat(
+                                ConfirmDirectionsActivityViewModel.EXTRA_DIRECTIONS,
+                                BasicLocation::class.java
+                            )
+                    }
                 }
             }
 
-        shouldShowLocationPermissionRationale.value =
-            activity.shouldShowRequestPermissionRationale(ACCESS_FINE_LOCATION)
+        viewModelScope.launch {
+            shouldShowLocationPermissionRationale.emit(
+                activity.shouldShowRequestPermissionRationale(ACCESS_FINE_LOCATION)
+            )
+        }
 
         if (!activity.shouldShowRequestPermissionRationale(ACCESS_FINE_LOCATION)) {
             requestLocationPermission()
@@ -373,6 +392,11 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
     }
 
     fun getDirectionsBack() {
-        getDirectionsBackLauncher.launch(Intent(app, ConfirmDirectionsActivity::class.java))
+        getDirectionsBackLauncher.launch(
+            Intent(
+                app,
+                ConfirmDirectionsActivity::class.java
+            )
+        )
     }
 }

@@ -327,9 +327,11 @@ class MapView(
      * (expensive processing of map data happens on coroutine)
      */
     suspend fun setMapData(countryCode: CountryCode, newMapData: MapData) {
-        val processedMapData = processMapData(countryCode, newMapData)
+        val processedMapData = withContext(Default) {
+            processMapData(countryCode, newMapData)
+        }
 
-        withContext(Main) {
+        withContext(Main.immediate) {
             waysByType = processedMapData
             requestRenderFrame()
         }
@@ -356,13 +358,16 @@ class MapView(
                         surface.isCycleable -> PATH
                         else -> BAD_PATH
                     }
+
                 MOTORWAY, TRUNK, PRIMARY, SECONDARY, LIVING_STEET, MOTORWAY_LINK,
                 TRUNK_LINK, PRIMARY_LINK, SECONDARY_LINK -> highway
+
                 TERTIARY, UNCLASSIFIED, RESIDENTIAL, TERTIARY_LINK, ROAD ->
                     when (bicycle) {
                         DESIGNATED -> RESIDENTIAL_DESIGNATED
                         else -> highway
                     }
+
                 PEDESTRIAN, PATH, TRACK, BRIDALWAY, FOOTWAY ->
                     when {
                         bicycle == DESIGNATED -> highway
@@ -372,6 +377,7 @@ class MapView(
                         surface?.isCycleable == true -> BAD_PATH
                         else -> null
                     }
+
                 SERVICE ->
                     when {
                         !areBicyclesAllowed -> null
@@ -382,6 +388,7 @@ class MapView(
                         name == null -> null
                         else -> SERVICE
                     }
+
                 else -> throw IllegalStateException("Unknown way type $highway")
             }
         }
@@ -401,6 +408,7 @@ class MapView(
                     surface.isCycleable -> pathPaint
                     else -> pathBadSurfacePaint
                 }
+
                 PEDESTRIAN, FOOTWAY, PATH, TRACK, BRIDALWAY -> when {
                     // If bikes are not allowed way was already filtered out in
                     // [getDisplayedHighwayType]
@@ -409,12 +417,14 @@ class MapView(
                     surface?.isPaved == true -> pathPaint
                     else -> pathBadSurfacePaint
                 }
+
                 MOTORWAY, MOTORWAY_LINK -> motorWayPaint
                 TRUNK, TRUNK_LINK, PRIMARY, PRIMARY_LINK, SECONDARY, SECONDARY_LINK ->
                     when (areBicyclesAllowed) {
                         true -> highTrafficPaint
                         false -> highTrafficNoBicyclesPaint
                     }
+
                 TERTIARY, TERTIARY_LINK, UNCLASSIFIED, RESIDENTIAL, LIVING_STEET, SERVICE,
                 ROAD ->
                     when {
@@ -422,6 +432,7 @@ class MapView(
                         !areBicyclesAllowed -> residentialNoBicyclesPaint
                         else -> residentialPaint
                     }
+
                 else -> throw IllegalStateException("Unknown way type $highway")
             }
         }
@@ -553,6 +564,7 @@ class MapView(
                 dragState.draggedCenterTimeout?.cancel()
                 dragState.draggedCenterTimeout = null
             }
+
             MotionEvent.ACTION_MOVE -> {
                 val move = dragState.pointers.mapNotNull { dragPointer ->
                     event.pointers.firstOrNull { it.id == dragPointer.id }?.let { touchPointer ->
@@ -615,6 +627,7 @@ class MapView(
                     )
                 }
             }
+
             MotionEvent.ACTION_POINTER_UP -> {
                 val numPointersBefore = dragState.pointers.size
 
@@ -638,6 +651,7 @@ class MapView(
                     }
                 }
             }
+
             MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_UP -> {
                 if (dragState.pointers.isNotEmpty()) {
                     dragState.pointers.clear()
@@ -1011,9 +1025,11 @@ class MapView(
                 centerFromBottomDim != null -> {
                     height - centerFromBottomDim
                 }
+
                 centerFromBottomFraction != null -> {
                     height - (height * centerFromBottomFraction)
                 }
+
                 else -> {
                     0f
                 }
@@ -1661,5 +1677,10 @@ class MapView(
             setColor(color)
         }
         requestRenderFrame()
+    }
+
+    /** Recycle internal state */
+    fun recycle() {
+        nextFrame?.recycle()
     }
 }

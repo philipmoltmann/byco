@@ -18,18 +18,14 @@ package androidapp.byco.ui
 
 import android.os.Bundle
 import androidapp.byco.lib.databinding.AboutActivityBinding
+import androidapp.byco.util.BycoActivity
 import androidapp.byco.util.compat.getPackageInfoCompat
 import androidx.activity.viewModels
-import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers.Main
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * About activity.
  */
-class AboutActivity : AppCompatActivity() {
+class AboutActivity : BycoActivity() {
     private val viewModel by viewModels<AboutActivityViewModel>()
     private lateinit var binding: AboutActivityBinding
 
@@ -46,18 +42,5 @@ class AboutActivity : AppCompatActivity() {
         binding.privacyPolicy.setOnClickListener { viewModel.openPrivacyPolicy(this) }
         binding.dependenciesLicenses.setOnClickListener { viewModel.openDependenciesLicenses(this) }
         binding.appLicense.setOnClickListener { viewModel.openAppLicenses(this) }
-    }
-
-    override fun onStart() {
-        super.onStart()
-
-        lifecycleScope.launch(Main) {
-            delay(2000)
-
-            binding.appIconBackground.animate()
-                .translationX(binding.appIconBackground.width * 0.05f).setDuration(10000).start()
-            binding.appIconBackground.animate()
-                .translationY(binding.appIconBackground.height * 0.1f).setDuration(10000).start()
-        }
     }
 }

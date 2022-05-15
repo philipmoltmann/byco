@@ -24,9 +24,9 @@ import android.net.Uri
 import android.os.Bundle
 import androidapp.byco.lib.R
 import androidapp.byco.lib.databinding.SaveToFileActivityBinding
+import androidapp.byco.util.BycoActivity
 import androidapp.byco.util.compat.getParcelableExtraCompat
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -36,7 +36,7 @@ import lib.gpx.GPX_MIME_TYPE
 /**
  * Share action Receiver to store a file to disk. Not sure why there is no default target for this.
  */
-class SaveToFileActivity : AppCompatActivity() {
+class SaveToFileActivity : BycoActivity() {
     private val TAG = SaveToFileActivity::class.java.simpleName
 
     private lateinit var binding: SaveToFileActivityBinding

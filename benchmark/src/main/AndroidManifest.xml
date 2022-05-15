@@ -12,7 +12,7 @@
             tools:node="remove" />
 
         <activity
-            android:name="androidapp.byco.RidingActivity"
+            android:name="androidapp.byco.ui.RidingActivity"
             android:exported="false"
             tools:replace="android:exported"
             tools:ignore="MissingClass" />

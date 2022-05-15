@@ -16,8 +16,12 @@
 
 package androidapp.byco.background
 
-import android.app.*
-import android.app.PendingIntent.*
+import android.app.Notification
+import android.app.NotificationManager
+import android.app.PendingIntent.FLAG_IMMUTABLE
+import android.app.PendingIntent.FLAG_ONE_SHOT
+import android.app.PendingIntent.FLAG_UPDATE_CURRENT
+import android.app.PendingIntent.getActivity
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -36,6 +40,7 @@ import androidapp.byco.data.RideRecordingRepository
 import androidapp.byco.lib.R
 import androidapp.byco.ui.RidingActivity
 import androidapp.byco.ui.StopRideActivity
+import androidapp.byco.util.BycoService
 import androidx.annotation.GuardedBy
 import androidx.annotation.MainThread
 import androidx.core.app.NotificationChannelCompat
@@ -44,16 +49,25 @@ import androidx.core.app.NotificationCompat.PRIORITY_LOW
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.lifecycle.Observer
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
-import lib.gpx.*
+import lib.gpx.BasicLocation
+import lib.gpx.DebugLog
+import lib.gpx.Distance
+import lib.gpx.Duration
+import lib.gpx.RecordedLocation
+import lib.gpx.TRACK_ZIP_ENTRY
+import lib.gpx.toBasicLocation
+import lib.gpx.toRecordedLocation
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileOutputStream
-import java.util.*
+import java.util.Date
 import java.util.concurrent.TimeUnit.HOURS
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -63,12 +77,14 @@ import java.util.zip.ZipOutputStream
  *
  * Runs in separate process, hence use [RideRecordingRepository] to interact with this.
  */
-class RideRecorder : Service() {
+class RideRecorder : BycoService() {
     private val TAG = RideRecorder::class.java.simpleName
 
     private lateinit var impl: RideRecorderImpl
 
     override fun onCreate() {
+        super.onCreate()
+
         impl = RideRecorderImpl()
     }
 
@@ -94,7 +110,13 @@ class RideRecorder : Service() {
         private val NEW_SEGMENT_MARKER = 's'
         private val POINT_MARKER = 'p'
 
-        private val coroutineScope = CoroutineScope(Job())
+        private val recorderScope =
+            CoroutineScope(
+                app.appScope.coroutineContext + Job(app.appScope.coroutineContext.job) + CoroutineName(
+                    RideRecorderImpl::class.simpleName!!
+                )
+            )
+        private var recordingJob: Job? = null
 
         @GuardedBy("clients")
         private val clients = mutableListOf<IRideClient>()
@@ -142,7 +164,7 @@ class RideRecorder : Service() {
         }
 
         private fun notifyClients() {
-            coroutineScope.launch(Main.immediate) {
+            recorderScope.launch(Main.immediate) {
                 synchronized(clients) {
                     clients.toList().forEach { client ->
                         synchronized(this) {
@@ -210,6 +232,7 @@ class RideRecorder : Service() {
                             }
                             currentSegment = mutableListOf()
                         }
+
                         line.startsWith(POINT_MARKER) -> {
                             line.parseRecordedLocation()
                                 ?.let { currentSegment.add(it) }
@@ -225,7 +248,8 @@ class RideRecorder : Service() {
             return segments
         }
 
-        private val locationObserver = Observer<Location> { newLoc ->
+        private val locationObserver = Observer<Location?> { newLoc ->
+            newLoc ?: return@Observer
             synchronized(this) {
                 temporaryRecording?.apply {
                     write("${newLoc.toRecordedLocation().serialize()}\n")
@@ -326,7 +350,6 @@ class RideRecorder : Service() {
         }
 
         @MainThread
-        @Suppress("BlockingMethodInNonBlockingContext")
         fun startRecording(useForegroundService: Boolean) {
             synchronized(this) {
                 if (temporaryRecording != null) {
@@ -335,9 +358,9 @@ class RideRecorder : Service() {
 
                 // If a ride was already getting recorded, continue this recording
                 try {
-                    if (RideRecordingRepository[application].recordingFile?.exists() == true) {
+                    if (RideRecordingRepository[app].recordingFile?.exists() == true) {
                         val line =
-                            RideRecordingRepository[application].recordingFile!!.inputStream()
+                            RideRecordingRepository[app].recordingFile!!.inputStream()
                                 .bufferedReader().readLine()
 
                         if (line.startsWith(DATE_MARKER)) {
@@ -347,7 +370,7 @@ class RideRecorder : Service() {
                 } catch (e: Exception) {
                     DebugLog.e(
                         TAG,
-                        "Cannot parse date from ${RideRecordingRepository[application].recordingFile}"
+                        "Cannot parse date from ${RideRecordingRepository[app].recordingFile}"
                     )
                 }
 
@@ -356,21 +379,21 @@ class RideRecorder : Service() {
                 rideStartLocation = null
                 if (rideStartDate == null) {
                     // New recording
-                    RideRecordingRepository[application].recordingId = System.currentTimeMillis()
+                    RideRecordingRepository[app].recordingId = System.currentTimeMillis()
 
                     rideStartDate = Date()
-                    RideRecordingRepository[application].recordingFile!!.outputStream()
+                    RideRecordingRepository[app].recordingFile!!.outputStream()
                         .bufferedWriter().use {
                             it.write("$DATE_MARKER${rideStartDate!!.time}\n")
                         }
 
                     DebugLog.i(
                         TAG,
-                        "Starting new ride ${RideRecordingRepository[application].recordingId}"
+                        "Starting new ride ${RideRecordingRepository[app].recordingId}"
                     )
                 } else {
                     // Otherwise extract rideDistance and rideStartLocation from the existing data
-                    RideRecordingRepository[application].recordingFile!!.forEachRecording()
+                    RideRecordingRepository[app].recordingFile!!.forEachRecording()
                         .forEach { segment ->
                             var lastLocation = segment[0]
 
@@ -388,13 +411,13 @@ class RideRecorder : Service() {
 
                     DebugLog.i(
                         TAG,
-                        "Resuming ride ${RideRecordingRepository[application].recordingId}: " +
+                        "Resuming ride ${RideRecordingRepository[app].recordingId}: " +
                                 "date=$rideStartDate, distance=$rideDistance, startLoc=$rideStartLocation"
                     )
                 }
 
                 temporaryRecording =
-                    FileOutputStream(RideRecordingRepository[application].recordingFile!!, true)
+                    FileOutputStream(RideRecordingRepository[app].recordingFile!!, true)
                         .bufferedWriter()
 
                 // Add new segment marker
@@ -403,9 +426,23 @@ class RideRecorder : Service() {
                     flush()
                 }
 
-                LocationRepository[application].location.observeForever(locationObserver)
-                PhoneStateRepository[application].date.observeForever(dateObserver)
-                RideRecordingRepository[application].rideTime.observeForever(rideTimeObserver)
+                recordingJob = recorderScope.launch {
+                    launch {
+                        LocationRepository[app].rawLocation.collect {
+                            locationObserver.onChanged(it)
+                        }
+                    }
+                    launch {
+                        PhoneStateRepository[app].date.collect {
+                            dateObserver.onChanged(it)
+                        }
+                    }
+                    launch {
+                        RideRecordingRepository[app].rideTime.collect {
+                            rideTimeObserver.onChanged(it)
+                        }
+                    }
+                }
                 application.registerReceiver(shutdownReceiver, IntentFilter(ACTION_SHUTDOWN))
 
                 if (usesForegroundService) {
@@ -419,25 +456,22 @@ class RideRecorder : Service() {
             }
         }
 
-        @Suppress("BlockingMethodInNonBlockingContext")
         fun pauseRecording() {
-            coroutineScope.launch(Main) {
+            recorderScope.launch(Main) {
                 pauseRecordingSync()
             }
         }
 
         /** Execute procedure to pause recording ride on this thread */
-        private fun pauseRecordingSync() {
+        private fun pauseRecordingSync(notifyAndStop: Boolean = true) {
             synchronized(this) {
                 if (temporaryRecording == null) {
                     return
                 }
 
-                DebugLog.i(TAG, "Pausing ride ${RideRecordingRepository[application].recordingId}")
+                DebugLog.i(TAG, "Pausing ride ${RideRecordingRepository[app].recordingId}")
 
-                LocationRepository[application].location.removeObserver(locationObserver)
-                PhoneStateRepository[application].date.removeObserver(dateObserver)
-                RideRecordingRepository[application].rideTime.removeObserver(rideTimeObserver)
+                recordingJob?.cancel()
                 application.unregisterReceiver(shutdownReceiver)
 
                 temporaryRecording = null
@@ -454,15 +488,15 @@ class RideRecorder : Service() {
                         .cancel(NotificationIds.RIDE_RECORDING.ordinal)
                 }
 
-                stopSelf()
-
-                notifyClients()
+                if (notifyAndStop) {
+                    notifyClients()
+                    stopSelf()
+                }
             }
         }
 
-        @Suppress("BlockingMethodInNonBlockingContext")
         override fun stopRecording() {
-            coroutineScope.launch(Main) {
+            recorderScope.launch(Main) {
                 stopRecordingSync()
             }
         }
@@ -474,23 +508,23 @@ class RideRecorder : Service() {
                     return
                 }
 
-                pauseRecordingSync()
+                pauseRecordingSync(false)
 
-                DebugLog.i(TAG, "Stopping ride ${RideRecordingRepository[application].recordingId}")
+                DebugLog.i(TAG, "Stopping ride ${RideRecordingRepository[app].recordingId}")
 
                 File(filesDir, RECORDINGS_DIRECTORY).mkdirs()
 
                 // Convert temporary recording into gpx.zip
                 File(
                     filesDir,
-                    "${RideRecordingRepository[application].recordingId}.gpx.zip"
+                    "${RideRecordingRepository[app].recordingId}.gpx.zip"
                 ).apply {
                     outputStream().buffered().use { fileOs ->
                         ZipOutputStream(fileOs).use { zipOs ->
                             zipOs.putNextEntry(ZipEntry(TRACK_ZIP_ENTRY))
 
                             GpxSerializer(zipOs, null).use { gpxWriter ->
-                                RideRecordingRepository[application].recordingFile!!.forEachRecording()
+                                RideRecordingRepository[app].recordingFile!!.forEachRecording()
                                     .forEachIndexed { i, segment ->
                                         if (i != 0) {
                                             gpxWriter.newSegment()
@@ -511,14 +545,17 @@ class RideRecorder : Service() {
                 }
 
                 // Finish this recording and delete temporary data
-                RideRecordingRepository[application].recordingId = null
+                RideRecordingRepository[app].recordingId = null
+
+                notifyClients()
+                stopSelf()
             }
         }
 
         fun onDestroy() {
             pauseRecordingSync()
 
-            coroutineScope.cancel()
+            recorderScope.cancel()
         }
     }
 

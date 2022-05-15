@@ -12,8 +12,8 @@ android {
         applicationId "androidapp.byco"
         minSdk 23
         targetSdk target_sdk
-        versionCode 53
-        versionName "2.1.13"
+        versionCode 68
+        versionName "2.2.3"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -44,15 +44,12 @@ dependencies {
     implementation project(path: ':byco')
     implementation project(path: ':gpxlib')
     implementation 'com.google.android.gms:play-services-oss-licenses:17.0.1'
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1"
-    implementation 'androidx.lifecycle:lifecycle-livedata-core-ktx:2.6.1'
-    implementation 'com.google.android.gms:play-services-location:21.0.1'
 
     androidTestImplementation 'androidx.appcompat:appcompat:1.6.1'
     androidTestImplementation 'androidx.test:core:1.5.0'
     androidTestImplementation 'androidx.test.ext:junit-ktx:1.1.5'
     androidTestImplementation 'androidx.test:runner:1.5.2'
-    androidTestImplementation 'com.google.truth:truth:1.1.3'
-    androidTestImplementation 'io.mockk:mockk-android:1.12.0'
+    androidTestImplementation 'com.google.truth:truth:1.2.0'
+    androidTestImplementation 'io.mockk:mockk-android:1.13.8'
     androidTestImplementation 'junit:junit:4.13.2'
 }

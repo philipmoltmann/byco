@@ -17,23 +17,26 @@
 package androidapp.byco.ui
 
 import android.os.Bundle
-import androidapp.byco.background.Prefetcher
 import androidapp.byco.lib.R
 import androidapp.byco.lib.databinding.ShareRideActivityBinding
+import androidapp.byco.util.BycoActivity
 import androidapp.byco.util.isDarkMode
-import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 
 /**
  * Dialog that allow configuring settings when sharing a ride
  */
-class ShareRideActivity : AppCompatActivity() {
+class ShareRideActivity : BycoActivity() {
     private lateinit var binding: ShareRideActivityBinding
     private val viewModel by lazy {
         ViewModelProvider(
             this,
             ShareRideActivityViewModelFactory(
-                application,
+                app,
                 intent.getStringExtra(EXTRA_PREVIOUS_RIDE_FILE_NAME)!!
             )
         )[ShareRideActivityViewModel::class.java]
@@ -59,25 +62,27 @@ class ShareRideActivity : AppCompatActivity() {
             viewModel.setRemoveStartAndEnd(checkedId == R.id.remove_start_and_end)
             binding.shareModeCoach.neverShowAgain()
         }
-        // Update on init
-        viewModel.setRemoveStartAndEnd(binding.shareMode.checkedRadioButtonId == R.id.remove_start_and_end)
 
-        binding.routePreviewOutline?.clipToOutline = true
-        viewModel.getPreview(isDarkMode()).observe(this) {
-            binding.routePreview?.setImageBitmap(it)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    viewModel.removeStartAndEnd.collect { removeStartAndEnd ->
+                        if (removeStartAndEnd) {
+                            binding.removeStartAndEnd.isChecked = true
+                        } else {
+                            binding.wholeRide.isChecked = true
+                        }
+                    }
+                }
+
+                launch {
+                    binding.routePreviewOutline?.clipToOutline = true
+                    viewModel.getPreview(isDarkMode()).collect {
+                        binding.routePreview?.setImageBitmap(it)
+                    }
+                }
+            }
         }
-    }
-
-    override fun onStart() {
-        super.onStart()
-
-        Prefetcher[application].start(Prefetcher.ProcessPriority.FOREGROUND)
-    }
-
-    override fun onStop() {
-        super.onStop()
-
-        Prefetcher[application].stop(Prefetcher.ProcessPriority.FOREGROUND)
     }
 
     companion object {

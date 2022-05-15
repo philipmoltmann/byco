@@ -16,95 +16,136 @@
 
 package androidapp.byco.data
 
-import android.app.Application
-import android.os.FileObserver.*
+import android.os.FileObserver
+import android.os.FileObserver.CLOSE_WRITE
+import android.os.FileObserver.DELETE
+import android.os.FileObserver.MOVED_FROM
+import android.os.FileObserver.MOVED_TO
+import androidapp.byco.BycoApplication
 import androidapp.byco.RECORDINGS_DIRECTORY
-import androidapp.byco.util.AsyncLiveData
+import androidapp.byco.util.Repository
 import androidapp.byco.util.SelfCleaningCache
 import androidapp.byco.util.SingleParameterSingletonOf
+import androidapp.byco.util.Trigger
 import androidapp.byco.util.compat.createFileObserverCompat
 import androidapp.byco.util.newEntry
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MediatorLiveData
-import androidx.lifecycle.MutableLiveData
-import kotlinx.coroutines.*
+import androidapp.byco.util.plus
+import androidapp.byco.util.stateIn
 import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.Dispatchers.Main
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.timeout
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
-import lib.gpx.*
-import java.io.*
+import kotlinx.coroutines.withContext
+import lib.gpx.BasicLocation
+import lib.gpx.DebugLog
+import lib.gpx.GPX_ZIP_FILE_EXTENSION
+import lib.gpx.MapArea
+import lib.gpx.TRACK_ZIP_ENTRY
+import lib.gpx.Track
+import java.io.File
+import java.io.IOException
+import java.io.InputStream
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
 import java.lang.ref.WeakReference
 import java.util.zip.ZipOutputStream
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.time.Duration.Companion.seconds
 
 /** Management of previously recorded rides */
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class PreviousRidesRepository private constructor(
-    private val app: Application,
+    private val app: BycoApplication,
     private val MAX_CLOSEST_AREA_LAT_LON: Double = 0.02, // in degrees
     private val MAX_CLOSEST_DISTANCE: Float = 1000f // m
-) {
+) : Repository(app) {
     private val TAG = PreviousRidesRepository::class.java.simpleName
+    private val MAX_PREVIOUS_RIDES_UPDATE = 5.seconds
 
-    private val tracks = SelfCleaningCache<PreviousRide, LiveData<Track>>(1)
+    private val tracksMutex = Mutex()
+    private val tracks = SelfCleaningCache<PreviousRide, StateFlow<Track?>>(1)
 
     /** Track - i.e. - the actual locations of a [ride] */
-    fun getTrack(ride: PreviousRide): LiveData<Track> {
-        var v = tracks[ride]
+    suspend fun getTrack(ride: PreviousRide): SharedFlow<Track?> {
+        var v = tracksMutex.withLock { tracks[ride] }
 
         if (v == null) {
-            v = object : AsyncLiveData<Track>(IO) {
-                override suspend fun update(): Track? {
-                    return try {
+            v = flow {
+                emit(
+                    try {
                         Track.parseFrom(ride.file)
                     } catch (e: IOException) {
                         null
                     }
-                }
-            }
+                )
+            }.stateIn(null)
 
-            tracks[ride] = v
+            tracksMutex.withLock {
+                tracks[ride] = v
+            }
         }
         return v
     }
 
-    inner class PreviousRides : AsyncLiveData<List<PreviousRide>>() {
-        private val directoryObserver = createFileObserverCompat(
+    /** Send a `Unit` to force an update to [previousRides]. */
+    internal val previousRidesUpdateTrigger = Trigger(repositoryScope)
+
+    private val changeToRecordingsDirectory = callbackFlow {
+        val directoryObserver = createFileObserverCompat(
             File(
                 app.filesDir,
                 RECORDINGS_DIRECTORY
             )
         ) { event: Int, _: String? ->
             if (event in setOf(CLOSE_WRITE, MOVED_TO, MOVED_FROM, DELETE)) {
-                requestUpdate()
+                launch {
+                    send(event)
+                }
             }
         }
 
-        init {
-            addSource(RideRecordingRepository[app].isRideBeingRecorded) {
-                requestUpdate()
-            }
-        }
+        directoryObserver.startWatching()
 
-        override fun onActive() {
-            super.onActive()
-            directoryObserver.startWatching()
-            requestUpdate()
-        }
+        awaitClose { directoryObserver.stopWatching() }
+    }.stateIn(FileObserver.CREATE)
 
-        override suspend fun update(): List<PreviousRide> {
-            val previouslyParsed = value ?: emptyList()
+    /** All previous recorded (and added) rides */
+    val previousRides = flow {
+        var previouslyParsed = listOf<PreviousRide>()
+
+        (previousRidesUpdateTrigger.flow + changeToRecordingsDirectory).collect {
             val concurrencyLimit = Semaphore(8)
 
-            return coroutineScope {
+            val newParsed = coroutineScope {
                 File(app.filesDir, RECORDINGS_DIRECTORY).listFiles()
                     ?.map { file ->
                         async(IO) {
                             previouslyParsed.find {
                                 it.file.name == file.name && it.lastModified == file.lastModified()
                             } ?: run {
-                                try {
+                                return@async try {
                                     concurrencyLimit.withPermit {
                                         PreviousRide.parseFrom(file)
                                     }
@@ -119,25 +160,21 @@ class PreviousRidesRepository private constructor(
                             }
                         }
                     }?.mapNotNull { it.await() }?.sortedBy { it.title }
-                    ?.sortedByDescending { it.time } ?: emptyList()
+                    ?.sortedByDescending { it.time }
+                    ?: emptyList()
             }
-        }
 
-        override fun onInactive() {
-            super.onInactive()
-            directoryObserver.stopWatching()
+            previouslyParsed = newParsed
+            emit(previouslyParsed)
         }
-    }
-
-    /** All previous recorded (and added) rides */
-    val previousRides = PreviousRides()
+    }.stateIn(emptyList())
 
     /**
      * Ride to be shown on map.
      *
      * @see showOnMap
      */
-    val rideShownOnMap = MutableLiveData<PreviousRide?>()
+    val rideShownOnMap = MutableStateFlow<PreviousRide?>(null)
 
     /**
      * Track (@see [getTrack]) to be shown on map.
@@ -145,26 +182,9 @@ class PreviousRidesRepository private constructor(
      * @see rideShownOnMap
      * @see showOnMap
      */
-    val visibleTrack = object : MediatorLiveData<Track?>() {
-        private var currentlyShownRide: PreviousRide? = null
-        private var trackLiveData: LiveData<Track>? = null
-
-        init {
-            addSource(rideShownOnMap) { ride ->
-                if (ride == currentlyShownRide) {
-                    return@addSource
-                }
-                currentlyShownRide = ride
-
-                trackLiveData?.let { removeSource(it) }
-                if (ride != null) {
-                    trackLiveData = getTrack(ride).also { addSource(it) { value = it } }
-                } else {
-                    value = null
-                }
-            }
-        }
-    }
+    val visibleTrack = rideShownOnMap.flatMapLatest {
+        it?.let { getTrack(it) } ?: flowOf(null)
+    }.stateIn(null)
 
     /**
      * Closest location to current location of [visibleTrack].
@@ -173,76 +193,79 @@ class PreviousRidesRepository private constructor(
      *
      * Maximum [MAX_CLOSEST_AREA_LAT_LON] away
      */
-    val closestLocationOnTrack =
-        object : AsyncLiveData<Pair<Float, BasicLocation>>(setNullValues = true) {
-            private var reducedVisibleTrackArea: MapArea? = null
-            private var reducedVisibleTrackSrc: WeakReference<Track>? = null
-            private var reducedVisibleTrack: TrackAsNodes? = null
+    val closestLocationOnTrack = flow {
+        var reducedVisibleTrackArea: MapArea? = null
+        var reducedVisibleTrackSrc: WeakReference<Track>? = null
+        var reducedVisibleTrack: TrackAsNodes? = null
 
-            init {
-                requestUpdateIfChanged(visibleTrack, LocationRepository[app].location)
+        (visibleTrack + LocationRepository[app].smoothedLocation).collect {
+            val location =
+                LocationRepository[app].smoothedLocation.value?.location ?: run {
+                    emit(null)
+                    return@collect
+                }
+            val visibleTrack = visibleTrack.value ?: run {
+                emit(null)
+                return@collect
             }
 
-            override suspend fun update(): Pair<Float, BasicLocation>? {
-                val location = LocationRepository[app].location.value?.toBasicLocation() ?: return null
-                val visibleTrack = visibleTrack.value ?: return null
+            val newVisibleTrackArea = MapArea(
+                floor((location.latitude - MAX_CLOSEST_AREA_LAT_LON) / MAX_CLOSEST_AREA_LAT_LON) * MAX_CLOSEST_AREA_LAT_LON,
+                floor((location.longitude - MAX_CLOSEST_AREA_LAT_LON) / MAX_CLOSEST_AREA_LAT_LON) * MAX_CLOSEST_AREA_LAT_LON,
+                ceil((location.latitude + MAX_CLOSEST_AREA_LAT_LON) / MAX_CLOSEST_AREA_LAT_LON) * MAX_CLOSEST_AREA_LAT_LON,
+                ceil((location.longitude + MAX_CLOSEST_AREA_LAT_LON) / MAX_CLOSEST_AREA_LAT_LON) * MAX_CLOSEST_AREA_LAT_LON
+            )
 
-                val newVisibleTrackArea = MapArea(
-                    floor((location.latitude - MAX_CLOSEST_AREA_LAT_LON) / MAX_CLOSEST_AREA_LAT_LON) * MAX_CLOSEST_AREA_LAT_LON,
-                    floor((location.longitude - MAX_CLOSEST_AREA_LAT_LON) / MAX_CLOSEST_AREA_LAT_LON) * MAX_CLOSEST_AREA_LAT_LON,
-                    ceil((location.latitude + MAX_CLOSEST_AREA_LAT_LON) / MAX_CLOSEST_AREA_LAT_LON) * MAX_CLOSEST_AREA_LAT_LON,
-                    ceil((location.longitude + MAX_CLOSEST_AREA_LAT_LON) / MAX_CLOSEST_AREA_LAT_LON) * MAX_CLOSEST_AREA_LAT_LON
-                )
+            if (newVisibleTrackArea != reducedVisibleTrackArea
+                || reducedVisibleTrackSrc?.get() != visibleTrack
+            ) {
+                reducedVisibleTrack =
+                    visibleTrack.restrictTo(newVisibleTrackArea, computeProgress = true)
 
-                if (newVisibleTrackArea != reducedVisibleTrackArea
-                    || reducedVisibleTrackSrc?.get() != visibleTrack) {
+                reducedVisibleTrackSrc = WeakReference(visibleTrack)
+                reducedVisibleTrackArea = newVisibleTrackArea
+            }
 
-                    reducedVisibleTrack = visibleTrack.restrictTo(newVisibleTrackArea, computeProgress = true)
+            var absoluteClosest: BasicLocation? = null
+            var absoluteClosestDistance = Float.POSITIVE_INFINITY
+            var absoluteClosestProgress: Float? = null
 
-                    reducedVisibleTrackSrc = WeakReference(visibleTrack)
-                    reducedVisibleTrackArea = newVisibleTrackArea
+            reducedVisibleTrack!!.forEach { (progressAtSegmentStart, segment) ->
+                var progress = progressAtSegmentStart
+
+                coroutineScope {
+                    ensureActive()
                 }
 
-                var absoluteClosest: BasicLocation? = null
-                var absoluteClosestDistance = Float.POSITIVE_INFINITY
-                var absoluteClosestProgress: Float? = null
+                segment.forEachIndexed { i, _ ->
+                    if (i > 0) {
+                        val closest = location.closestNodeOn(segment[i - 1], segment[i])
+                        val distance = segment[i - 1].distanceTo(segment[i])
+                        val closestDistance = location.distanceTo(closest)
 
-                reducedVisibleTrack!!.forEach { (progressAtSegmentStart, segment) ->
-                    var progress = progressAtSegmentStart
+                        if (closestDistance < absoluteClosestDistance
+                            && closestDistance < MAX_CLOSEST_DISTANCE
+                        ) {
+                            val distanceToStart = closest.distanceTo(segment[i - 1])
+                            val distanceToEnd = closest.distanceTo(segment[i])
 
-                    coroutineScope {
-                        ensureActive()
-                    }
-
-                    segment.forEachIndexed { i, _ ->
-                        if (i > 0) {
-                            val closest = location.closestNodeOn(segment[i - 1], segment[i])
-                            val distance = segment[i - 1].distanceTo(segment[i])
-                            val closestDistance = location.distanceTo(closest)
-
-                            if (closestDistance < absoluteClosestDistance
-                                && closestDistance < MAX_CLOSEST_DISTANCE
-                            ) {
-                                val distanceToStart = closest.distanceTo(segment[i - 1])
-                                val distanceToEnd = closest.distanceTo(segment[i])
-
-                                absoluteClosest = closest
-                                absoluteClosestDistance = closestDistance
-                                absoluteClosestProgress =
-                                    progress * (distanceToEnd / distance) +
-                                            (progress + distance) * (distanceToStart / distance)
-                            }
-
-                            progress += distance
+                            absoluteClosest = closest
+                            absoluteClosestDistance = closestDistance
+                            absoluteClosestProgress =
+                                progress * (distanceToEnd / distance) +
+                                        (progress + distance) * (distanceToStart / distance)
                         }
+
+                        progress += distance
                     }
                 }
-
-                return absoluteClosest?.let {
-                    absoluteClosestProgress!! to absoluteClosest!!
-                }
             }
+
+            emit(absoluteClosest?.let {
+                absoluteClosestProgress!! to absoluteClosest!!
+            })
         }
+    }.stateIn(null)
 
     /**
      * Set ride to be shown on the map.
@@ -251,8 +274,8 @@ class PreviousRidesRepository private constructor(
      *
      * @see rideShownOnMap
      */
-    fun showOnMap(ride: PreviousRide?) {
-        rideShownOnMap.value = ride
+    suspend fun showOnMap(ride: PreviousRide?) {
+        rideShownOnMap.emit(ride)
     }
 
     /**
@@ -304,19 +327,24 @@ class PreviousRidesRepository private constructor(
         // atomic rename to never not have partial files (due to crashes) in repository.
         file.renameTo(File(File(app.filesDir, RECORDINGS_DIRECTORY), file.name))
 
-        // Instantly and synchronous update [previousRides]
-        withContext(Main) {
-            previousRides.value = previousRides.update()
-        }
+        // Request update of [previousRides] as fileobserver can be unreliable
+        previousRidesUpdateTrigger.trigger()
 
-        return previousRides.value?.find { ride -> ride.file.name == file.name }
+        // Find new [PreviousRide]
+        return previousRides.filter { rides -> rides.find { ride -> ride.file.name == file.name } != null }
+            // If ride cannot be found, give up after [MAX_PREVIOUS_RIDES_UPDATE].
+            .timeout(MAX_PREVIOUS_RIDES_UPDATE).catch { e ->
+                if (e is TimeoutCancellationException) {
+                    emit(emptyList())
+                }
+            }.first().find { ride -> ride.file.name == file.name }
     }
 
     fun delete(ride: PreviousRide) {
         ride.file.delete()
 
-        // Instantly update live data as file observer can be unreliable
-        previousRides.requestUpdate()
+        // Instantly update [previousRides] as file observer can be unreliable
+        previousRidesUpdateTrigger.trigger()
     }
 
     /**
@@ -337,10 +365,12 @@ class PreviousRidesRepository private constructor(
                 it.writePreviousRide(app, ride, newTitle)
             }
         }
+
+        previousRidesUpdateTrigger.trigger()
     }
 
     companion object :
-        SingleParameterSingletonOf<Application, PreviousRidesRepository>({
+        SingleParameterSingletonOf<BycoApplication, PreviousRidesRepository>({
             PreviousRidesRepository(
                 it
             )

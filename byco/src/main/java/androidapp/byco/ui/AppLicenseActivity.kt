@@ -18,9 +18,9 @@ package androidapp.byco.ui
 import android.os.Bundle
 import androidapp.byco.lib.R
 import androidapp.byco.lib.databinding.AppLicenseActivityBinding
-import androidx.appcompat.app.AppCompatActivity
+import androidapp.byco.util.BycoActivity
 
-class AppLicenseActivity : AppCompatActivity() {
+class AppLicenseActivity : BycoActivity() {
     private lateinit var binding: AppLicenseActivityBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {

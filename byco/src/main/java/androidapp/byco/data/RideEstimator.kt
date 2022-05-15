@@ -16,22 +16,26 @@
 
 package androidapp.byco.data
 
-import android.app.Application
-import androidapp.byco.util.DontUpdateIfUnchangedLiveData
-import androidapp.byco.util.addSources
-import androidx.lifecycle.MediatorLiveData
-import androidx.lifecycle.MutableLiveData
+import androidapp.byco.BycoApplication
+import androidapp.byco.util.SingleParameterSingletonOf
+import androidapp.byco.util.Trigger
+import androidapp.byco.util.plus
+import androidapp.byco.util.stateIn
 import androidx.lifecycle.SavedStateHandle
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers.Main
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import lib.gpx.BasicLocation
 import lib.gpx.Duration
 import lib.gpx.MapArea
-import lib.gpx.toBasicLocation
 import java.util.concurrent.TimeUnit.MINUTES
+import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.math.max
 import kotlin.math.min
 
@@ -42,142 +46,92 @@ import kotlin.math.min
  * moving for some not insignificant distance.
  */
 class RideEstimator(
-    app: Application,
+    app: BycoApplication,
     private val state: SavedStateHandle,
-    private val coroutineScope: CoroutineScope,
-    private val TIME_STARTED_BEFORE_STARTING_RIDE: Long = MINUTES.toMillis(1),
+    coroutineScope: CoroutineScope,
+    private val TIME_STARTED_BEFORE_STARTING_RIDE: Long = SECONDS.toMillis(10),
     private val TIME_STOPPED_BEFORE_STOPPING_RIDE: Long = MINUTES.toMillis(10),
     private val MIN_RIDE_DISTANCE_BEFORE_STARTING_RIDE: Float = 100f // m
 ) {
-    private val STATE_KEY_EST_RIDE_DURATION_RIDE_START_TIME = "ride_estimator.ride_start_time"
-    private val STATE_KEY_EST_ONGOING_RIDE_PAUSE_TIME = "ride_estimator.ride_pause_time"
-    private val STATE_KEY_EST_ONGOING_RIDE_AREA = "ride_estimator.ride_area"
-    private val STATE_KEY_EST_ONGOING_RIDE_START_LOCATION = "est_ride_duration.ride_start_location"
+    // All [state] is synchronized by [stateLock]
+    private val STATE_KEY_EST_ACTIVITY_PAUSE_TIME = "ride_estimator.activity_pause_time"
+    private val STATE_KEY_EST_IS_ONGOING = "ride_estimator.is_ongoing"
+    private val STATE_KEY_EST_RIDE_AREA = "ride_estimator.ride_area"
+    private val STATE_KEY_EST_RIDE_START_TIME = "ride_estimator.ride_start_time"
+    private val STATE_KEY_EST_RIDE_START_LOCATION = "est_ride_duration.ride_start_location"
 
     private val NOT_STARTED = Long.MAX_VALUE
     private val NOT_PAUSED = Long.MAX_VALUE
 
-    private var delayedUpdate: Job? = null
+    private val stateLock = Mutex()
 
-    // When the activity was started
-    private var startedSince = object : DontUpdateIfUnchangedLiveData<Long>() {
-        init {
-            value = NOT_STARTED
+    init {
+        coroutineScope.launch {
+            updateInstance.send(this@RideEstimator)
         }
     }
-    private val currentLocation = LocationRepository[app].location
-    private val isRideBeingRecorded = RideRecordingRepository[app].isRideBeingRecorded
-    private var ridePauseTime = state.getLiveData(STATE_KEY_EST_ONGOING_RIDE_PAUSE_TIME, NOT_PAUSED)
-    private var rideArea = state.getLiveData<MapArea>(STATE_KEY_EST_ONGOING_RIDE_AREA)
 
-    /** Used to signal from the riding activity that it is visible */
-    private var isActivityStarted = false
+    /** Force an update to [isOngoing]. */
+    private val isOngoingUpdateTrigger = Trigger(coroutineScope)
+
+    private var activityPauseTimeState: Long
+        get() {
+            return state[STATE_KEY_EST_ACTIVITY_PAUSE_TIME] ?: NOT_PAUSED
+        }
+        set(v) {
+            state[STATE_KEY_EST_ACTIVITY_PAUSE_TIME] = v
+        }
+    private var isOngoingState: Boolean
+        get() {
+            return state[STATE_KEY_EST_IS_ONGOING] ?: false
+        }
+        set(v) {
+            state[STATE_KEY_EST_IS_ONGOING] = v
+        }
+    private var rideAreaState: MapArea?
+        get() {
+            return state[STATE_KEY_EST_RIDE_AREA]
+        }
+        set(v) {
+            state[STATE_KEY_EST_RIDE_AREA] = v
+        }
+    private var rideStartTimeState: Long
+        get() {
+            return state[STATE_KEY_EST_RIDE_START_TIME] ?: NOT_STARTED
+        }
+        set(v) {
+            state[STATE_KEY_EST_RIDE_START_TIME] = v
+        }
+    private var rideStartLocation: BasicLocation?
+        get() {
+            return state[STATE_KEY_EST_RIDE_START_LOCATION]
+        }
+        set(v) {
+            state[STATE_KEY_EST_RIDE_START_LOCATION] = v
+        }
 
     /**
      * Whether the `RidingActivity` is started is an input to the ride estimation logic, hence
      * this activity needs to call this method `onStop`.
      */
-    fun onActivityStopped() {
-        isActivityStarted = false
-        ridePauseTime.value = min(ridePauseTime.value!!, System.currentTimeMillis())
-        update()
-
-        instance.value = null
+    suspend fun onActivityStopped() {
+        stateLock.withLock {
+            activityPauseTimeState = System.currentTimeMillis()
+        }
     }
 
     /**
      * Whether the `RidingActivity` is started is an input to the ride estimation logic, hence
      * this activity needs to call this method `onStart`.
      */
-    fun onActivityStarted() {
-        isActivityStarted = true
-        update()
-
-        assert(instance.value == null)
-        instance.value = this
-    }
-
-    fun update() {
-        // Don't estimate rides while a user triggered ride recording is ongoing
-        if (isRideBeingRecorded.value == true) {
-            if (isOngoing.value == true) {
-                clear()
-            }
-            return
-        }
-
-        // After activity was paused we might not have gotten updates, hence force one with
-        // activity not started as this might cancel the current estimated ride
-        if (isActivityStarted && ridePauseTime.value != NOT_PAUSED) {
-            updateInt(false)
-            updateInt(true)
-        } else {
-            updateInt(isActivityStarted)
-        }
-    }
-
-    private fun updateInt(isActivityStarted: Boolean) {
-        val now = System.currentTimeMillis()
-        val loc = currentLocation.value ?: return
-
-        // update state
-        if (isActivityStarted) {
-            startedSince.value = min(startedSince.value!!, now)
-            ridePauseTime.value = NOT_PAUSED
-
-            if (loc.accuracy > MIN_RIDE_DISTANCE_BEFORE_STARTING_RIDE / 4) {
-                // no accurate location, rideArea would be too imprecise
-                return
+    suspend fun onActivityStarted() {
+        stateLock.withLock {
+            // If this is a restart after being stopped, clear the ride estimation.
+            if (System.currentTimeMillis() - activityPauseTimeState > TIME_STOPPED_BEFORE_STOPPING_RIDE) {
+                clearLocked()
             }
 
-            if (startLocationInt.value == null) {
-                startLocationInt.value = loc.toBasicLocation()
-            }
-
-            if (rideArea.value == null) {
-                rideArea.value =
-                    MapArea(loc.latitude, loc.longitude, loc.latitude, loc.longitude)
-            } else {
-                rideArea.value = MapArea(
-                    min(loc.latitude, rideArea.value!!.minLatD),
-                    min(loc.longitude, rideArea.value!!.minLonD),
-                    max(loc.latitude, rideArea.value!!.maxLatD),
-                    max(loc.longitude, rideArea.value!!.maxLonD)
-                )
-            }
-        } else {
-            startedSince.value = NOT_STARTED
-        }
-
-        // Compute if estimated ride is ongoing
-        if (isActivityStarted) {
-            if (rideArea.value!!.min.distanceTo(rideArea.value!!.max)
-                > MIN_RIDE_DISTANCE_BEFORE_STARTING_RIDE
-            ) {
-                if (now - startedSince.value!! > TIME_STARTED_BEFORE_STARTING_RIDE) {
-                    isOngoing.value = true
-                } else {
-                    delayedUpdate?.cancel()
-
-                    delayedUpdate = coroutineScope.launch(Main.immediate) {
-                        delay(TIME_STARTED_BEFORE_STARTING_RIDE - (now - startedSince.value!!))
-                        update()
-                    }
-                }
-            }
-        } else {
-            if (now - ridePauseTime.value!! > TIME_STOPPED_BEFORE_STOPPING_RIDE) {
-                rideArea.value = null
-                startLocationInt.value = null
-                isOngoing.value = false
-            } else {
-                delayedUpdate?.cancel()
-
-                delayedUpdate = coroutineScope.launch(Main.immediate) {
-                    delay(TIME_STOPPED_BEFORE_STOPPING_RIDE - (now - ridePauseTime.value!!))
-                    update()
-                }
-            }
+            activityPauseTimeState = NOT_PAUSED
         }
     }
 
@@ -185,73 +139,122 @@ class RideEstimator(
      * If an estimated ride is ongoing. Estimated rides are started after the moves while the riding
      * activity is open.
      */
-    val isOngoing = object : MediatorLiveData<Boolean>() {
-        init {
-            addSources(currentLocation, PhoneStateRepository[app].date) {
-                update()
-            }
-        }
-    }
+    val isOngoing = (RideRecordingRepository[app].isRideBeingRecorded
+            + state.getStateFlow(STATE_KEY_EST_ACTIVITY_PAUSE_TIME, NOT_PAUSED)
+            + LocationRepository[app].smoothedLocation
+            + PhoneStateRepository[app].date
+            + isOngoingUpdateTrigger.flow).map { (isRideBeingRecorded, activityPausedTime, location, _, _) ->
+        stateLock.withLock {
+            val now = System.currentTimeMillis()
 
-    /** @see [rideStart] */
-    private val startLocationInt =
-        state.getLiveData<BasicLocation>(STATE_KEY_EST_ONGOING_RIDE_START_LOCATION)
+            // Should ride estimation be stopped?
+            if (isRideBeingRecorded) {
+                // Don't cause loops where [clearLocked] wakes up this flow again.
+                if (isOngoingState) {
+                    clearLocked()
+                }
+
+                return@map false
+            }
+
+            // Is ride estimation already running?
+            if (isOngoingState) {
+                return@map true
+            }
+
+            if (activityPausedTime == NOT_PAUSED) {
+                // Don't estimate ride if location is no good.
+                if (location == null || location.accuracy > MIN_RIDE_DISTANCE_BEFORE_STARTING_RIDE / 4) {
+                    // no accurate location, rideArea would be too imprecise
+                    return@map false
+                }
+
+                // Check how far the device moved since waiting for estimated ride to start.
+                rideAreaState = rideAreaState?.let { rideArea ->
+                    MapArea(
+                        min(location.location.latitude, rideArea.minLatD),
+                        min(location.location.longitude, rideArea.minLonD),
+                        max(location.location.latitude, rideArea.maxLatD),
+                        max(location.location.longitude, rideArea.maxLonD)
+                    )
+                } ?: MapArea(
+                    location.location.latitude,
+                    location.location.longitude,
+                    location.location.latitude,
+                    location.location.longitude
+                )
+
+                rideAreaState?.let { rideArea ->
+                    if (rideArea.min.distanceTo(rideArea.max) > MIN_RIDE_DISTANCE_BEFORE_STARTING_RIDE) {
+                        // How a ride probably has started. Hence remember location and time of this
+                        // first time this happened.
+                        if (rideStartLocation == null) {
+                            rideStartLocation = location.location
+                        }
+                        rideStartTimeState = min(rideStartTimeState, now)
+
+                        // Wait for the ride to probably have started before actually showing this
+                        // to the user.
+                        if (now - rideStartTimeState > TIME_STARTED_BEFORE_STARTING_RIDE) {
+                            isOngoingState = true
+                        }
+                    }
+                }
+            }
+
+            isOngoingState
+        }
+    }.stateIn(coroutineScope, false)
 
     /** Location where the estimated ride started */
-    val rideStart = object : MediatorLiveData<BasicLocation>() {
-        init {
-            addSources(startLocationInt, isOngoing) {
-                val newValue = if (isOngoing.value == true) {
-                    startLocationInt.value
-                } else {
-                    null
-                }
-
-                if (value != newValue) {
-                    value = newValue
-                }
-            }
+    val rideStart = (state.getStateFlow<BasicLocation?>(
+        STATE_KEY_EST_RIDE_START_LOCATION,
+        null
+    ) + isOngoing).map { (startLocation, isOngoing) ->
+        if (isOngoing) {
+            startLocation
+        } else {
+            null
         }
-    }
+    }.stateIn(coroutineScope, null)
 
     /** Duration of estimated ride */
-    val duration = object : MediatorLiveData<Duration?>() {
-        private var startTime: Long?
-            get() = state[STATE_KEY_EST_RIDE_DURATION_RIDE_START_TIME]
-            set(v) {
-                state[STATE_KEY_EST_RIDE_DURATION_RIDE_START_TIME] = v
-            }
-
-        init {
-            addSources(PhoneStateRepository[app].date, isOngoing) { update() }
-        }
-
-        private fun update() {
-            if (isOngoing.value == true) {
-                val now = System.currentTimeMillis()
-
-                if (startTime == null) {
-                    startTime = now
-                }
-                value = Duration(now - startTime!!)
+    val duration = (PhoneStateRepository[app].date + state.getStateFlow<Long?>(
+        STATE_KEY_EST_RIDE_START_TIME,
+        null
+    ) + isOngoing).map { (_, startTime, isOngoing) ->
+        startTime?.let {
+            if (isOngoing && startTime != NOT_STARTED) {
+                Duration(System.currentTimeMillis() - it)
             } else {
-                value = null
-                startTime = null
+                null
             }
+        }
+    }.stateIn(coroutineScope, null)
+
+    /** Clear currently estimate ride */
+    suspend fun clear() {
+        stateLock.withLock {
+            clearLocked()
         }
     }
 
-    /** Clear currently estimate ride */
-    fun clear() {
-        ridePauseTime.value = NOT_PAUSED
-        rideArea.value = null
-        startLocationInt.value = null
-        startedSince.value = NOT_STARTED
-        isOngoing.value = false
+    private fun clearLocked() {
+        assert(stateLock.isLocked)
+
+        isOngoingState = false
+        rideAreaState = null
+        rideStartTimeState = NOT_STARTED
+        rideStartLocation = null
+
+        isOngoingUpdateTrigger.trigger()
     }
 
     companion object {
-        // Instance is valid is a [RideEstimator] exists
-        var instance = MutableLiveData<RideEstimator?>()
+        private val updateInstance = Channel<RideEstimator?>(1, BufferOverflow.DROP_OLDEST)
+
+        var instance = SingleParameterSingletonOf<BycoApplication, Flow<RideEstimator?>> { app ->
+            updateInstance.receiveAsFlow().stateIn(app.appScope, null)
+        }
     }
 }

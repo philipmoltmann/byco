@@ -24,7 +24,7 @@ import android.view.View
 import androidapp.byco.data.MapDataRepository
 import androidapp.byco.lib.R
 import androidapp.byco.ui.views.MapView
-import androidapp.byco.util.getFirstValue
+import androidapp.byco.util.observeAsChannel
 import androidx.benchmark.junit4.BenchmarkRule
 import androidx.benchmark.junit4.measureRepeated
 import androidx.test.platform.app.InstrumentationRegistry
@@ -46,7 +46,7 @@ class MapViewBenchmark {
 
     // 9 tiles
     private val mapArea = MapArea(37.44, -122.19, 37.47, -122.16)
-    private val mapData = runBlocking { MapDataRepository[app].getMapData(mapArea).getFirstValue() }
+    private val mapData = runBlocking { MapDataRepository[app].getMapData(mapArea).observeAsChannel().receive() }
 
     private val mapView = (app.getSystemService(LayoutInflater::class.java)
         .inflate(R.layout.thumbnail, null) as MapView).apply {
@@ -63,7 +63,7 @@ class MapViewBenchmark {
         )
         layout(0, 0, measuredWidth, measuredHeight)
 
-        animateToLocation(BasicLocation(0.0, 0.0).toLocation(), false)
+        animateToLocation(BasicLocation(0.0, 0.0).toLocation(), animate = false)
         setZoomToInclude(BasicLocation(-1.0, -1.0), BasicLocation(1.0, 1.0), 0, 0)
     }
 

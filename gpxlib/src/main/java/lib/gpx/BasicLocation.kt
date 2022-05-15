@@ -74,6 +74,12 @@ open class BasicLocation(
         return result[0]
     }
 
+    fun distanceTo(other: Location): Float {
+        val result = floatArrayOf(Float.NaN)
+        Location.distanceBetween(latitude, longitude, other.latitude, other.longitude, result)
+        return result[0]
+    }
+
     override fun toString(): String {
         return "$latitude,$longitude"
     }
@@ -247,4 +253,10 @@ open class BasicLocation(
 
 fun Location.toBasicLocation(): BasicLocation {
     return BasicLocation(latitude, longitude)
+}
+
+fun Location.distanceTo(other: BasicLocation): Float {
+    val result = floatArrayOf(Float.NaN)
+    Location.distanceBetween(latitude, longitude, other.latitude, other.longitude, result)
+    return result[0]
 }

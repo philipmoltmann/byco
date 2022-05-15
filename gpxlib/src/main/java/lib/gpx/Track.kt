@@ -16,6 +16,8 @@
 
 package lib.gpx
 
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.zip.ZipInputStream
 import kotlin.math.max
@@ -63,16 +65,18 @@ class Track(
 
     companion object {
         suspend fun parseFrom(file: File): Track {
-            return file.inputStream().buffered().use { ins ->
-                ZipInputStream(ins).use { zipIs ->
-                    zipIs.findFirstNotNull { entry ->
-                        when (entry.name) {
-                            TRACK_ZIP_ENTRY ->
-                                GpxParser(zipIs).also { it.parse() }.track
-                            else ->
-                                null
-                        }
-                    }!!
+            return withContext(IO) {
+                file.inputStream().buffered().use { ins ->
+                    ZipInputStream(ins).use { zipIs ->
+                        zipIs.findFirstNotNull { entry ->
+                            when (entry.name) {
+                                TRACK_ZIP_ENTRY ->
+                                    GpxParser(zipIs).also { it.parse() }.track
+                                else ->
+                                    null
+                            }
+                        }!!
+                    }
                 }
             }
         }

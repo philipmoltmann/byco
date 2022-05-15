@@ -25,10 +25,10 @@ import android.widget.Toast
 import androidapp.byco.data.PreviousRide
 import androidapp.byco.lib.R
 import androidapp.byco.lib.databinding.AddRideActivityBinding
+import androidapp.byco.util.BycoActivity
 import androidapp.byco.util.compat.getParcelableArrayListExtraCompat
 import androidapp.byco.util.compat.getParcelableExtraCompat
 import androidx.activity.viewModels
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.coroutineScope
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
@@ -39,7 +39,7 @@ import java.io.InputStream
 /**
  * Action receiver when adding a ride shared by another app
  */
-class AddRideActivity : AppCompatActivity() {
+class AddRideActivity : BycoActivity() {
     private val TAG = AddRideActivity::class.java.simpleName
 
     private val viewModel by viewModels<AddRideRecordingViewModel>()

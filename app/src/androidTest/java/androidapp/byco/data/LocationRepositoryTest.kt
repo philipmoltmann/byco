@@ -16,10 +16,8 @@
 
 package androidapp.byco.data
 
-import androidapp.byco.util.observeAsChannel
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -35,9 +33,9 @@ class LocationRepositoryTest : BaseLocationTest() {
     private fun assertIsMovingIs(shouldBeMoving: Boolean) {
         var isFirst = true
         assertThat(runBlocking {
-            LocationRepository[app].isMoving.observeAsChannel().consumeAsFlow().filter { isMoving ->
+            LocationRepository[app].smoothedLocation.filter { smoothedLocation ->
                 // The first value might be stale, hence it is acceptable to ignore it
-                if (isFirst && isMoving != shouldBeMoving) {
+                if (isFirst && smoothedLocation?.isMoving != shouldBeMoving) {
                     isFirst = true
                     false
                 } else {

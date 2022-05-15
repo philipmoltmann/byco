@@ -20,9 +20,36 @@ import android.content.Context
 import android.location.Geocoder
 import android.location.Location
 import androidapp.byco.data.OsmDataProvider.HighwayType
-import androidapp.byco.data.OsmDataProvider.HighwayType.*
+import androidapp.byco.data.OsmDataProvider.HighwayType.BRIDALWAY
+import androidapp.byco.data.OsmDataProvider.HighwayType.CYCLEWAY
+import androidapp.byco.data.OsmDataProvider.HighwayType.FOOTWAY
+import androidapp.byco.data.OsmDataProvider.HighwayType.GENERATED
+import androidapp.byco.data.OsmDataProvider.HighwayType.LIVING_STEET
+import androidapp.byco.data.OsmDataProvider.HighwayType.MOTORWAY
+import androidapp.byco.data.OsmDataProvider.HighwayType.MOTORWAY_LINK
+import androidapp.byco.data.OsmDataProvider.HighwayType.PATH
+import androidapp.byco.data.OsmDataProvider.HighwayType.PEDESTRIAN
+import androidapp.byco.data.OsmDataProvider.HighwayType.PRIMARY
+import androidapp.byco.data.OsmDataProvider.HighwayType.PRIMARY_LINK
+import androidapp.byco.data.OsmDataProvider.HighwayType.RESIDENTIAL
+import androidapp.byco.data.OsmDataProvider.HighwayType.ROAD
+import androidapp.byco.data.OsmDataProvider.HighwayType.SECONDARY
+import androidapp.byco.data.OsmDataProvider.HighwayType.SECONDARY_LINK
+import androidapp.byco.data.OsmDataProvider.HighwayType.SERVICE
+import androidapp.byco.data.OsmDataProvider.HighwayType.TERTIARY
+import androidapp.byco.data.OsmDataProvider.HighwayType.TERTIARY_LINK
+import androidapp.byco.data.OsmDataProvider.HighwayType.TRACK
+import androidapp.byco.data.OsmDataProvider.HighwayType.TRUNK
+import androidapp.byco.data.OsmDataProvider.HighwayType.TRUNK_LINK
+import androidapp.byco.data.OsmDataProvider.HighwayType.UNCLASSIFIED
 import androidapp.byco.util.compat.getFromLocationCompat
 import androidx.core.os.ConfigurationCompat
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Country code according to ISO 3166 (or null if there is no country)
@@ -31,37 +58,39 @@ import androidx.core.os.ConfigurationCompat
  */
 typealias CountryCode = String?
 
-// Cache last country code in case [getCountryCode] cannot compute new value
-private var lastCountryCode: CountryCode = null
-
 /**
  * Get country code for given location
  */
-suspend fun getCountryCode(
+fun getCountryCode(
     context: Context,
     location: Location?,
-    isCurrentLocation: Boolean = true
-): CountryCode {
-    if (Geocoder.isPresent() && location != null) {
-        return try {
-            Geocoder(context).getFromLocationCompat(location.latitude, location.longitude, 1)
-                ?.get(0)?.countryCode
-                .also {
-                    if (isCurrentLocation) {
-                        lastCountryCode = it
-                    }
-                }
-        } catch (ignored: Exception) {
-            null
-        } ?: if (isCurrentLocation) {
-            // Unlikely that the user moved quickly, hence re-use last country code if Geocoder did
-            // not work
-            lastCountryCode
+) = flow {
+    val DELAY_ON_ERROR = 10.seconds
+
+    while (currentCoroutineContext().isActive) {
+        if (Geocoder.isPresent() && location != null) {
+            val address = try {
+                Geocoder(context).getFromLocationCompat(
+                    location.latitude,
+                    location.longitude,
+                    1
+                )?.get(0)
+            } catch (ignored: Exception) {
+                null
+            }
+
+            currentCoroutineContext().ensureActive()
+
+            if (address != null) {
+                emit(address.countryCode)
+                break
+            } else {
+                delay(DELAY_ON_ERROR)
+            }
         } else {
-            null
+            emit(getCountryCodeFromLocale(context))
+            break
         }
-    } else {
-        return getCountryCodeFromLocale(context)
     }
 }
 

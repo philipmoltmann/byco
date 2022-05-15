@@ -16,24 +16,29 @@
 
 package androidapp.byco.data
 
-import android.app.Application
 import android.content.ComponentName
 import android.content.Context.BIND_AUTO_CREATE
 import android.content.ServiceConnection
 import android.os.DeadObjectException
 import android.os.IBinder
 import android.util.Log
+import androidapp.byco.BycoApplication
 import androidapp.byco.background.IRideClient
 import androidapp.byco.background.IRideRecorder
 import androidapp.byco.background.RideRecorder
+import androidapp.byco.util.Repository
 import androidapp.byco.util.SingleParameterSingletonOf
+import androidapp.byco.util.stateIn
 import androidx.annotation.MainThread
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MediatorLiveData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import lib.gpx.BasicLocation
 import lib.gpx.Distance
@@ -42,8 +47,8 @@ import java.io.File
 
 /** State and method for a ongoing recording */
 class RideRecordingRepository internal constructor(
-    private val app: Application,
-) {
+    private val app: BycoApplication,
+) : Repository(app) {
     private val TAG = RideRecordingRepository::class.java.simpleName
 
     private val ONGOING_RECORDING_FILE = "ongoing-recording-"
@@ -79,13 +84,8 @@ class RideRecordingRepository internal constructor(
     val recordingFile: File?
         get() = recordingId?.let { File(app.filesDir, "$ONGOING_RECORDING_FILE$it") }
 
-    private val serviceData =
-        object : LiveData<Triple<Duration?, BasicLocation?, Distance?>>(), ServiceConnection {
-            override fun onActive() {
-                super.onActive()
-                app.bindService(RideRecorder.getIntent(app), this, BIND_AUTO_CREATE)
-            }
-
+    private val serviceData = callbackFlow {
+        val serviceConnection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, newService: IBinder) {
                 try {
                     IRideRecorder.Stub.asInterface(newService).also {
@@ -94,10 +94,12 @@ class RideRecordingRepository internal constructor(
                                 isRideBeingRecorded: Boolean, rideTime: Duration?,
                                 rideStart: BasicLocation?, distance: Distance?
                             ) {
-                                if (isRideBeingRecorded) {
-                                    postValue(Triple(rideTime, rideStart, distance))
-                                } else {
-                                    postValue(Triple(null, null, null))
+                                launch {
+                                    if (isRideBeingRecorded) {
+                                        send(Triple(rideTime, rideStart, distance))
+                                    } else {
+                                        send(Triple(null, null, null))
+                                    }
                                 }
                             }
                         })
@@ -110,55 +112,29 @@ class RideRecordingRepository internal constructor(
             override fun onServiceDisconnected(name: ComponentName?) {
                 // empty
             }
-
-            override fun onInactive() {
-                super.onInactive()
-                app.unbindService(this)
-            }
         }
+        app.bindService(RideRecorder.getIntent(app), serviceConnection, BIND_AUTO_CREATE)
+
+        awaitClose { app.unbindService(serviceConnection) }
+    }.stateIn(Triple(null, null, null))
 
     /** How long it the recording already on going? */
-    val rideTime = object : MediatorLiveData<Duration?>() {
-        init {
-            addSource(serviceData) { (duration, _, _) ->
-                value = duration
-            }
+    val rideTime = serviceData.map { (duration, _, _) -> duration }.distinctUntilChanged().onEach {
+        if (it == null) {
+            // A recording just stopped, trigger update.
+            PreviousRidesRepository[app].previousRidesUpdateTrigger.trigger()
         }
-    }
+    }.stateIn(null)
 
     /** Where did the ride start */
-    val rideStart = object : MediatorLiveData<BasicLocation?>() {
-        init {
-            addSource(serviceData) { (_, start, _) ->
-                if (start != value) {
-                    value = start
-                }
-            }
-        }
-    }
+    val rideStart = serviceData.map { (_, start, _) -> start }.stateIn(null)
 
     /** How much distance of ride has been recorded */
-    val rideDistance = object : MediatorLiveData<Distance?>() {
-        init {
-            addSource(serviceData) { (_, _, distance) ->
-                value = distance
-            }
-        }
-    }
+    // val rideDistance = serviceData.map { (_, _, distance) -> distance }
 
     /** Is a ride currently be recorded */
-    val isRideBeingRecorded = object : MediatorLiveData<Boolean>() {
-        init {
-            // Guess a good init value
-            value = recordingId != null
-
-            addSource(rideTime) { rideTime ->
-                if (value != (rideTime != null)) {
-                    value = rideTime != null
-                }
-            }
-        }
-    }
+    val isRideBeingRecorded =
+        rideTime.map { it != null }.stateIn(recordingId != null)
 
     private fun onService(block: IRideRecorder.() -> (Unit)) {
         // Make a copy of the service scope at the time the onService method was called
@@ -197,7 +173,7 @@ class RideRecordingRepository internal constructor(
     }
 
     companion object :
-        SingleParameterSingletonOf<Application, RideRecordingRepository>({
+        SingleParameterSingletonOf<BycoApplication, RideRecordingRepository>({
             RideRecordingRepository(
                 it
             )

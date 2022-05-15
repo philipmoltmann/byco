@@ -35,10 +35,18 @@ class MapViewTest {
         every { width } returns 1080
         every { height } returns 1920
 
-        center = mockk<Location>().apply {
-            every { latitude } returns 37.44
-            every { longitude } returns -122.20
-            every { bearing } returns 42f
+        centerAndLocation = mockk<Pair<Location?, Location?>>().apply {
+            every { first } returns mockk<Location>().apply {
+                every { latitude } returns 37.44
+                every { longitude } returns -122.20
+                every { bearing } returns 42f
+            }
+
+            every { second } returns mockk<Location>().apply {
+                every { latitude } returns 37.44
+                every { longitude } returns -122.20
+                every { bearing } returns 42f
+            }
         }
     }
 

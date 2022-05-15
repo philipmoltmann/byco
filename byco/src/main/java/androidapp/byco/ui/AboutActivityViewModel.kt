@@ -24,11 +24,11 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.widget.Toast
 import androidapp.byco.lib.R
+import androidapp.byco.util.BycoViewModel
 import androidapp.byco.util.compat.getApplicationInfoCompat
-import androidx.lifecycle.AndroidViewModel
 
 /** ViewModel for [AboutActivity] */
-class AboutActivityViewModel(private val app: Application) : AndroidViewModel(app) {
+class AboutActivityViewModel(application: Application) : BycoViewModel(application) {
     fun close(activity: Activity) {
         activity.finish()
     }

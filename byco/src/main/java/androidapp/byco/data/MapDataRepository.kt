@@ -16,20 +16,48 @@
 
 package androidapp.byco.data
 
-import android.app.Application
+import android.os.SystemClock
 import android.util.Log
-import androidapp.byco.FixedLowPriorityThreads
-import androidapp.byco.FixedThreads
+import androidapp.byco.BycoApplication
+import androidapp.byco.LowPriority
 import androidapp.byco.ui.views.DISPLAYED_HIGHWAY_TYPES
-import androidapp.byco.util.*
+import androidapp.byco.util.DiskCache
+import androidapp.byco.util.Repository
+import androidapp.byco.util.SelfCleaningCache
+import androidapp.byco.util.SingleParameterSingletonOf
+import androidapp.byco.util.TWO
+import androidapp.byco.util.forBigDecimal
+import androidapp.byco.util.mapBigDecimal
+import androidapp.byco.util.newEntry
+import androidapp.byco.util.readBigDecimal
+import androidapp.byco.util.writeBigDecimal
 import androidx.annotation.VisibleForTesting
-import androidx.lifecycle.LiveData
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers.Default
 import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.Dispatchers.Main
-import kotlinx.coroutines.channels.consume
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapMerge
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import lib.gpx.BasicLocation
 import lib.gpx.DebugLog
 import lib.gpx.MapArea
@@ -38,26 +66,36 @@ import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
 import java.math.BigDecimal
-import java.math.BigDecimal.*
-import java.math.RoundingMode.*
+import java.math.BigDecimal.ONE
+import java.math.BigDecimal.TEN
+import java.math.BigDecimal.ZERO
+import java.math.RoundingMode.HALF_UP
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import kotlin.coroutines.coroutineContext
 
-private typealias MapTile = LiveData<Pair<List<ParsedNode>, List<ParsedWay>>>
-private typealias MapTileKey = Pair<BigDecimal, BigDecimal>
+private typealias MapTile = SharedFlow<Pair<List<ParsedNode>, List<ParsedWay>>?>
+typealias MapTileKey = Pair<BigDecimal, BigDecimal>
 
 typealias MapData = Set<Way>
 
 /** Source for map data */
+@OptIn(ExperimentalCoroutinesApi::class)
 class MapDataRepository private constructor(
-    private val app: Application,
+    private val app: BycoApplication,
     CACHE_LOCATION: File = File(app.cacheDir, "MapData"),
     MAX_AGE: Long = TimeUnit.DAYS.toMillis(90),
     NUM_CACHED_TILES: Int = 64,
     private val CURRENT_DATA_FORMAT_VERSION: Int = 2
-) {
+) : Repository(app) {
     private val TAG = MapDataRepository::class.java.simpleName
+
+    @VisibleForTesting
+    constructor(app: BycoApplication, numCachedTiles: Int) : this(
+        app,
+        NUM_CACHED_TILES = numCachedTiles
+    )
 
     private val TILE_WIDTH = ONE.divide(TEN.pow(TILE_SCALE))
 
@@ -130,7 +168,6 @@ class MapDataRepository private constructor(
             }
         },
         { ins ->
-            @Suppress("BlockingMethodInNonBlockingContext")
             withContext(IO) {
                 try {
                     ZipInputStream(ins).use { zipIs ->
@@ -154,6 +191,7 @@ class MapDataRepository private constructor(
 
                                     (lat to lon) to (nodes to ways)
                                 }
+
                                 else -> throw DiskCache.InvalidCachedDataFileException("unsupported data file version $version")
                             }
                         }
@@ -170,32 +208,29 @@ class MapDataRepository private constructor(
      * Cache parsed data in memory as it is often reused when moving the center of a map a little
      * bit
      */
+    private val mapDataTilesMutex = Mutex()
     private val mapDataTiles = SelfCleaningCache<MapTileKey, MapTile>(NUM_CACHED_TILES)
 
+    private val prefetchLimiter = Semaphore(mapDataCache.numParallelLockedKeys * 2)
+
     @VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)
-    fun getMapDataTile(tileKey: MapTileKey): MapTile {
-        var v = synchronized(mapDataTiles) {
+    suspend fun getMapDataTile(tileKey: MapTileKey): MapTile {
+        var v = mapDataTilesMutex.withLock {
             mapDataTiles[tileKey]
         }
 
         if (v == null) {
-            v = object : AsyncLiveData<Pair<List<ParsedNode>, List<ParsedWay>>>() {
-                override suspend fun update(): Pair<List<ParsedNode>, List<ParsedWay>>? {
-                    return if (value != null) {
-                        // No need to reload data if the liveData goes active again
-                        null
-                    } else {
-                        try {
-                            mapDataCache.get(tileKey)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Could not get tile", e)
-                            null
-                        }
+            v = flow {
+                try {
+                    emit(mapDataCache.get(tileKey))
+                } catch (e: Exception) {
+                    if (coroutineContext.isActive) {
+                        Log.e(TAG, "Could not get tile", e)
                     }
                 }
-            }
+            }.shareIn(repositoryScope, SharingStarted.Lazily, 1)
 
-            synchronized(mapDataTiles) {
+            mapDataTilesMutex.withLock {
                 mapDataTiles[tileKey] = v
             }
         }
@@ -203,7 +238,7 @@ class MapDataRepository private constructor(
         return v
     }
 
-    /** [LiveData] whether the map data of a certain file is very likely prefetched */
+    /** `Flow` whether the map data of a certain file is very likely prefetched */
     fun isPrefetched(tile: MapTileKey) = mapDataCache.hasData(tile)
 
     /**
@@ -211,29 +246,35 @@ class MapDataRepository private constructor(
      *
      * @see DiskCache.preFetch
      */
-    suspend fun preFetchMapDataTile(tileKey: MapTileKey, skipIfLocked: Boolean = false) {
-        coroutineScope {
+    suspend fun preFetchMapDataTile(tileKey: MapTileKey, skipIfLocked: Boolean = false): Boolean {
+        return prefetchLimiter.withPermit {
             try {
                 mapDataCache.preFetch(tileKey, skipIfLocked)
+
+                return@withPermit true
+            } catch (e: DiskCache.SkippedBecauseLockedException) {
+                // pass
+
+                return@withPermit false
             } catch (e: Exception) {
-                DebugLog.e(TAG, "Could not prefetch $tileKey", e)
+                DebugLog.e(TAG, "Could not prefetch map around $tileKey", e)
+
+                return@withPermit false
             }
         }
     }
 
     /**
-     * Prefetch square map data around a [center] to be later retrieved via [getMapData]
-     * without need of the network.
-     *
-     * @see DiskCache.preFetch
+     * Get square map data around a [center].
      */
-    suspend fun preFetchMapData(
+    fun getMapTilesAround(
         center: BasicLocation,
         maxDistance: Float,  // m
-    ) {
+    ): List<MapTileKey> {
         val centerLat = BigDecimal(center.latitude).setScale(TILE_SCALE, HALF_UP)
         val centerLon = BigDecimal(center.longitude).setScale(TILE_SCALE, HALF_UP)
 
+        val mapTiles = mutableListOf<MapTileKey>()
         var distanceDeg = ZERO
         while (center.distanceTo(
                 BasicLocation(
@@ -243,29 +284,16 @@ class MapDataRepository private constructor(
             )
             < maxDistance
         ) {
-            DebugLog.v(TAG, "Prefetching $distanceDeg degrees map data around $center")
-
-            val parallelLoads = Semaphore(mapDataCache.numParallelLockedKeys * 2)
-
             forBigDecimal(centerLat - distanceDeg, centerLat + distanceDeg, TILE_WIDTH) { lat ->
                 forBigDecimal(centerLon - distanceDeg, centerLon + distanceDeg, TILE_WIDTH) { lon ->
-                    parallelLoads.acquire()
-
-                    coroutineScope {
-                        launch(IO) {
-                            try {
-                                mapDataCache.preFetch(lat to lon)
-                            } catch (e: Exception) {
-                                DebugLog.w(TAG, "Failed to prefetch map for $lat/$lon")
-                            }
-                            parallelLoads.release()
-                        }
-                    }
+                    mapTiles.add(lat to lon)
                 }
             }
 
             distanceDeg += TILE_WIDTH * TWO
         }
+
+        return mapTiles
     }
 
     /**
@@ -279,149 +307,91 @@ class MapDataRepository private constructor(
         loadStreetNames: Boolean = true,
         reuseNodes: Collection<Node> = emptyList(),
         lowPriority: Boolean = false
-    ) = object : CoroutineAwareLiveData<MapData>() {
-        private val thread = if (lowPriority) {
-            FixedLowPriorityThreads.random()
-        } else {
-            FixedThreads.random()
-        }
-        private var retriever: Job? = null
-        private var delayedValuePoster: Job? = null
+    ) = channelFlow {
+        val processedNodes = reuseNodes.associateByTo(mutableMapOf()) { it.id }
+        val processedWays = mutableSetOf<Way>()
 
-        // Combines all the values from the individual tiles ([mapDataTiles]) and return the
-        // intermediate and final result
-        private fun update() {
-            retriever?.cancel()
+        var partialDataReturn: Job? = null
+        var nextPartialDataReturn = 0L
 
-            if (value != null) {
-                // Value is only loaded once
-                return
+        mapBigDecimal(mapArea.minLat, mapArea.maxLat, TILE_WIDTH) { lat ->
+            mapBigDecimal(mapArea.minLon, mapArea.maxLon, TILE_WIDTH) { lon ->
+                lat to lon
             }
+        }.flatten().asFlow().flatMapMerge(mapDataCache.numParallelLockedKeys) { key ->
+            getMapDataTile(key).filterNotNull().take(1)
+        }.collect { tile ->
+            val (parsedNodes, parsedWays) = tile
 
-            retriever = liveDataScope.async(thread) {
-                try {
-                    // Limit parallel loads to not clog up mapDataCache's locking
-                    val parallelLoads = Semaphore(mapDataCache.numParallelLockedKeys * 2)
+            // Add the parsedWays from the tile to the processedWays.
+            val parsedNodeMap =
+                parsedNodes.associate { node -> node.id to node.toNode() }
 
-                    val unprocessedTiles = mutableSetOf<Pair<BigDecimal, BigDecimal>>()
-                    var allScheduled = false
-
-                    // These are collecting the data. All the manipulation is done in the
-                    // [SingleThread]
-                    val processedNodes = reuseNodes.map { it.id to it }.toMap(mutableMapOf())
-                    val processedWays = mutableSetOf<Way>()
-
-                    forBigDecimal(mapArea.minLat, mapArea.maxLat, TILE_WIDTH) { lat ->
-                        forBigDecimal(mapArea.minLon, mapArea.maxLon, TILE_WIDTH) { lon ->
-                            // Make a local copy or lat and lon for the new tile
-                            val tileKey = lat to lon
-
-                            parallelLoads.acquire()
-                            unprocessedTiles.add(tileKey)
-                            if (lat + TILE_WIDTH >= mapArea.maxLat
-                                && lon + TILE_WIDTH >= mapArea.maxLon
-                            ) {
-                                allScheduled = true
+            parsedWays.forEach { parsedWay ->
+                // Get actual [Node]s the way goes through
+                val wayNodes = ArrayList<Node>(parsedWay.nodeRefs.size)
+                parsedWay.nodeRefs.forEach { nodeId ->
+                    // Reuse already processed node
+                    val processedNode = processedNodes[nodeId]
+                    if (processedNode != null) {
+                        wayNodes += processedNode
+                    } else {
+                        // Use newly parsed node
+                        //
+                        // If there is no parsed node the way extends over the edge of the map,
+                        // hence just drop the node
+                        parsedNodeMap[nodeId]?.let { parsedNode ->
+                            parsedNode.also { node ->
+                                processedNodes[nodeId] = node
                             }
-
-                            launch {
-                                getMapDataTile(tileKey).observeAsChannel().consume {
-                                    val (parsedNodes, parsedWays) = receive()
-
-                                    parallelLoads.release()
-
-                                    val parsedNodeMap = withContext(Default) {
-                                        parsedNodes.associate { node -> node.id to node.toNode() }
-                                    }
-
-                                    withContext(thread) {
-                                        parsedWays.forEach { parsedWay ->
-                                            // Get actual [Node]s the way goes through
-                                            val wayNodes = ArrayList<Node>(parsedWay.nodeRefs.size)
-                                            parsedWay.nodeRefs.forEach { nodeId ->
-                                                // Reuse already processed node
-                                                val processedNode = processedNodes[nodeId]
-                                                if (processedNode != null) {
-                                                    wayNodes += processedNode
-                                                } else {
-                                                    // Use newly parsed node
-                                                    //
-                                                    // If there is no parsed node the way
-                                                    // extends over the edge of the map, hence
-                                                    // just drop the node
-                                                    parsedNodeMap[nodeId]?.let { parsedNode ->
-                                                        parsedNode.also { node ->
-                                                            processedNodes[nodeId] = node
-                                                        }
-                                                    }?.also {
-                                                        wayNodes += it
-                                                    }
-                                                }
-                                            }
-
-                                            processedWays += parsedWay.toWay(
-                                                wayNodes,
-                                                loadStreetNames
-                                            ).also { way ->
-                                                // Link back from nodes -> way
-                                                wayNodes.forEach { node ->
-                                                    // TODO: This modifies state that was previously
-                                                    // returned and that is not deep copied
-                                                    node.mutableWays.add(way)
-                                                }
-                                            }
-                                        }
-
-                                        delayedValuePoster?.cancel()
-
-                                        unprocessedTiles.remove(tileKey)
-                                        val isCompletelyLoaded =
-                                            allScheduled && unprocessedTiles.isEmpty()
-
-                                        if (isCompletelyLoaded) {
-                                            postValue(processedWays)
-                                        } else if (returnPartialData) {
-                                            // Avoid triggering too often for intermediate values
-                                            delayedValuePoster = launch(thread) {
-                                                delay(100)
-                                                if (isActive) {
-                                                    postValue(processedWays.toSet())
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        }?.also {
+                            wayNodes += it
                         }
                     }
-                } finally {
-                    withContext(NonCancellable + Main) {
-                        retriever = null
+                }
+
+                processedWays += parsedWay.toWay(
+                    wayNodes,
+                    loadStreetNames
+                ).also { way ->
+                    // Link back from nodes -> way
+                    wayNodes.forEach { node ->
+                        // TODO: This modifies state that was previously
+                        // returned and that is not deep copied
+                        node.mutableWays.add(way)
+                    }
+                }
+            }
+
+            if (returnPartialData) {
+                // processedWays might still be modified, hence deep copy it.
+                val processedWaysCopy = processedWays.toSet()
+
+                partialDataReturn?.cancelAndJoin()
+                partialDataReturn = coroutineScope {
+                    launch {
+                        // Avoid triggering too often for intermediate values
+                        delay(nextPartialDataReturn - SystemClock.elapsedRealtime())
+
+                        send(processedWaysCopy)
+                        nextPartialDataReturn = SystemClock.elapsedRealtime() + 100L
                     }
                 }
             }
         }
 
-        init {
-            assert(mapArea.minLat < mapArea.maxLat)
-            assert(mapArea.minLon < mapArea.maxLon)
-            assert(mapArea.minLat.setScale(TILE_SCALE, HALF_UP) == mapArea.minLat)
-            assert(mapArea.minLon.setScale(TILE_SCALE, HALF_UP) == mapArea.minLon)
+        partialDataReturn?.cancelAndJoin()
+        send(processedWays)
+    }.flowOn(
+        if (lowPriority) {
+            LowPriority
+        } else {
+            Default
         }
-
-        override fun onActive() {
-            super.onActive()
-            update()
-        }
-
-        override fun onInactive() {
-            super.onInactive()
-            retriever?.cancel()
-        }
-    } as LiveData<MapData>
+    )
 
     companion object :
-        SingleParameterSingletonOf<Application, MapDataRepository>({ MapDataRepository(it) }) {
+        SingleParameterSingletonOf<BycoApplication, MapDataRepository>({ MapDataRepository(it) }) {
         const val TILE_SCALE: Int = 2
     }
 }

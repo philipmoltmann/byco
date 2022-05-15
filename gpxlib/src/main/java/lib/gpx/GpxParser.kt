@@ -48,7 +48,6 @@ class GpxParser(private val ins: InputStream) {
     var time: Long? = null
 
     suspend fun parse() {
-        @Suppress("BlockingMethodInNonBlockingContext")
         withContext(IO) {
             val xml = Xml.newPullParser().apply {
                 setInput(ins.bufferedReader(UTF8))

@@ -42,20 +42,12 @@ const val ONGOING_TRIP_RECORDINGS_NOTIFICATION_CHANNEL =
 
 const val FILE_PROVIDER_AUTHORITY = "androidapp.byco.fileprovider"
 
-/** Single thread executor */
-val SingleThread = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
-
-/** A fixed set of threads */
-val FixedThreads = (0 until 8).map { Executors.newSingleThreadExecutor().asCoroutineDispatcher() }
-
 /** A fixed set of lower priority threads */
-val FixedLowPriorityThreads = (0 until 8).map {
-    Executors.newSingleThreadExecutor {
-        object : Thread() {
-            override fun run() {
-                Process.setThreadPriority(Process.THREAD_PRIORITY_LESS_FAVORABLE)
-                it.run()
-            }
+val LowPriority = Executors.newCachedThreadPool {
+    object : Thread() {
+        override fun run() {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_LESS_FAVORABLE)
+            it?.run()
         }
-    }.asCoroutineDispatcher()
-}
+    }
+}.asCoroutineDispatcher()

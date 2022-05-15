@@ -18,25 +18,35 @@ package androidapp.byco.ui
 
 import android.os.Bundle
 import androidapp.byco.lib.R
+import androidapp.byco.util.BycoActivity
 import androidx.activity.viewModels
-import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 
 /**
  * Action receiver called when stopping ride from riding notification
  */
-class StopRideActivity : AppCompatActivity() {
+class StopRideActivity : BycoActivity() {
     private val viewModel by viewModels<StopRideActivityViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.stop_ride_activity)
 
-        viewModel.isRideBeingRecorded.observe(this) { isRideBeingRecorded ->
-            if (!isRideBeingRecorded) {
-                finish()
+        viewModel.stopRecording()
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    viewModel.isRideBeingRecorded.collect { isRideBeingRecorded ->
+                        if (!isRideBeingRecorded) {
+                            finish()
+                        }
+                    }
+                }
             }
         }
-
-        viewModel.stopRecording()
     }
 }

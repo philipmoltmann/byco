@@ -20,23 +20,13 @@ import android.content.Context
 import android.content.res.Configuration
 import android.view.View
 import android.view.View.VISIBLE
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MediatorLiveData
-import androidx.lifecycle.Observer
-import kotlinx.coroutines.*
-import kotlinx.coroutines.Dispatchers.Main
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.channels.Channel
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.math.BigDecimal
 import java.math.BigInteger
-import java.util.*
+import java.util.Locale
 import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -72,33 +62,11 @@ suspend fun ZipOutputStream.newEntry(name: String, block: suspend ZipOutputStrea
     }
 }
 
-/** Iterate through all entries of a [ZipInputStream] */
-inline fun ZipInputStream.forEntries(block: ZipInputStream.(ZipEntry) -> (Unit)) {
-    var entry = nextEntry
-    while (entry != null) {
-        block(entry)
-        try {
-            entry = nextEntry
-        } catch (e: Exception) {
-            break
-        }
-    }
-}
-
-suspend fun forBigDecimal(
+fun forBigDecimal(
     from: BigDecimal,
     toExcluding: BigDecimal,
     step: BigDecimal,
-    block: suspend (v: BigDecimal) -> Unit
-) {
-    coroutineContext.forBigDecimal(from, toExcluding, step) { block(it) }
-}
-
-suspend fun CoroutineContext.forBigDecimal(
-    from: BigDecimal,
-    toExcluding: BigDecimal,
-    step: BigDecimal,
-    block: suspend CoroutineContext.(v: BigDecimal) -> Unit
+    block: (v: BigDecimal) -> Unit
 ) {
     var v = from
     while (v < toExcluding) {
@@ -108,16 +76,36 @@ suspend fun CoroutineContext.forBigDecimal(
     }
 }
 
-suspend fun <R> mapBigDecimal(
+suspend fun forBigDecimalSuspend(
     from: BigDecimal,
     toExcluding: BigDecimal,
     step: BigDecimal,
-    block: suspend (v: BigDecimal) -> R
-): List<R> {
-    return coroutineContext.mapBigDecimal(from, toExcluding, step) { block(it) }
+    block: suspend (v: BigDecimal) -> Unit
+) {
+    var v = from
+    while (v < toExcluding) {
+        block(v)
+
+        v += step
+    }
 }
 
-suspend fun <R> CoroutineContext.mapBigDecimal(
+fun <R> mapBigDecimal(
+    from: BigDecimal,
+    toExcluding: BigDecimal,
+    step: BigDecimal,
+    block: (v: BigDecimal) -> R
+): List<R> {
+    val ret = mutableListOf<R>()
+
+    forBigDecimal(from, toExcluding, step) {
+        ret += block(it)
+    }
+
+    return ret
+}
+
+suspend fun <R> mapBigDecimalSuspend(
     from: BigDecimal,
     toExcluding: BigDecimal,
     step: BigDecimal,
@@ -125,7 +113,7 @@ suspend fun <R> CoroutineContext.mapBigDecimal(
 ): List<R> {
     val ret = mutableListOf<R>()
 
-    forBigDecimal(from, toExcluding, step) {
+    forBigDecimalSuspend(from, toExcluding, step) {
         ret += block(it)
     }
 
@@ -153,37 +141,6 @@ fun DataOutputStream.writeBigDecimal(d: BigDecimal) {
  */
 fun DataInputStream.readBigDecimal(): BigDecimal {
     return BigDecimal.valueOf(readLong(), readInt())
-}
-
-/**
- * Observe a [LiveData] and send each changed value to the returned [Channel]
- *
- * [LiveData] is observed until [Channel] is closed. Hence to avoid leaks, use `Channel.consume` or
- * similar.
- */
-@OptIn(DelicateCoroutinesApi::class, ExperimentalCoroutinesApi::class)
-suspend fun <T> LiveData<T>.observeAsChannel(): Channel<T> {
-    return coroutineScope {
-        val c = Channel<T>(1, BufferOverflow.DROP_OLDEST)
-        val observer = Observer<T> {
-            // Already on main thread + drop oldest is set, hence never blocking
-            GlobalScope.launch(Main.immediate) {
-                c.send(it)
-            }
-        }
-
-        withContext(Main.immediate) {
-            observeForever(observer)
-
-            c.invokeOnClose {
-                GlobalScope.launch(NonCancellable + Main.immediate) {
-                    removeObserver(observer)
-                }
-            }
-        }
-
-        c
-    }
 }
 
 /**
@@ -227,15 +184,6 @@ fun canonicalizeBearing(bearing: Float): Float {
     }
 }
 
-/**
- * Add multiple sources.
- */
-fun MediatorLiveData<*>.addSources(vararg sources: LiveData<*>, onChanged: Observer<Any?>) {
-    sources.forEach {
-        addSource(it, onChanged)
-    }
-}
-
 /* increase/decrease value to be in at or in between min and max */
 fun Double.restrictTo(min: Double, max: Double): Double {
     return min(max, max(min, this))
@@ -255,3 +203,4 @@ fun <L> List<L>.averageOf(getAverageField: (L) -> Double): Double {
 fun Context.isDarkMode(): Boolean {
     return (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_YES) != 0
 }
+

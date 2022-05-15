@@ -19,11 +19,11 @@ package androidapp.byco.ui
 import android.app.Application
 import androidapp.byco.data.PreviousRide
 import androidapp.byco.data.PreviousRidesRepository
-import androidx.lifecycle.AndroidViewModel
+import androidapp.byco.util.BycoViewModel
 import java.io.InputStream
 
 /** ViewModel for [AddRideActivity] */
-class AddRideRecordingViewModel(private val app: Application) : AndroidViewModel(app) {
+class AddRideRecordingViewModel(application: Application) : BycoViewModel(application) {
     /** Add a [ride] loaded from an [InputStream] to the list of known `PreviousRide`s */
     suspend fun add(ride: InputStream, progressCallback: suspend (Float?) -> Unit): PreviousRide? =
         PreviousRidesRepository[app].addRide(ride, null, progressCallback)

@@ -85,7 +85,6 @@ object OsmDataProvider {
         maxLat: BigDecimal,
         maxLon: BigDecimal,
     ): String {
-        @Suppress("BlockingMethodInNonBlockingContext")
         return withContext(IO) {
             var data: String? = null
             var incrementalBackoffTimeout = 20L

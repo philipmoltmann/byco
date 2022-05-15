@@ -16,46 +16,30 @@
 
 package androidapp.byco.ui
 
-import android.graphics.Bitmap
 import android.os.Bundle
-import androidapp.byco.background.Prefetcher
-import androidapp.byco.background.Prefetcher.ProcessPriority.FOREGROUND
+import android.view.View
 import androidapp.byco.lib.databinding.ConfirmDirectionsActivityBinding
+import androidapp.byco.util.BycoActivity
 import androidapp.byco.util.isDarkMode
 import androidapp.byco.util.makeVisibleIf
 import androidapp.byco.util.plus
 import androidx.activity.viewModels
-import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.Observer
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.launch
 
 /** Find directions back to the start of the ride */
-class ConfirmDirectionsActivity : AppCompatActivity() {
+class ConfirmDirectionsActivity : BycoActivity() {
     private val viewModel by viewModels<ConfirmDirectionsActivityViewModel>()
     private lateinit var binding: ConfirmDirectionsActivityBinding
 
-    private val routePreviewObserver = Observer<Bitmap> { binding.routePreview.setImageBitmap(it) }
-
-    private var lastPreviewWidth = -1
-    private var lastPreviewHeight = -1
-    private var routePreviewViewModel: LiveData<Bitmap>? = null
-    private fun updateRoutePreview() {
-        val width = binding.routePreview.width
-        val height = binding.routePreview.height
-
-        if (lastPreviewWidth != width || lastPreviewHeight != height) {
-            routePreviewViewModel?.removeObserver(routePreviewObserver)
-            routePreviewViewModel = null
-            lastPreviewWidth = width
-            lastPreviewHeight = height
-
-            if (width > 0 && height > 0) {
-                routePreviewViewModel = viewModel.getRoutePreview(width, height, isDarkMode())
-                routePreviewViewModel!!.observe(this, routePreviewObserver)
-            }
-        }
-    }
-
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -76,37 +60,53 @@ class ConfirmDirectionsActivity : AppCompatActivity() {
             viewModel.openMappingApp()
         }
 
-        viewModel.shouldShowMappingAppButton.observe(this) {
-            binding.openMappingApp?.makeVisibleIf(it)
-        }
-
-        viewModel.areDirectionsFound.observe(this) {
-            binding.progress.makeVisibleIf(!it)
-        }
-
-        viewModel.cannotFindDirections.observe(this) {
-            binding.cannotFindDirections.makeVisibleIf(it)
-        }
-
-        (viewModel.areDirectionsFound + viewModel.cannotFindDirections).observe(this) { (areDirectionsFound, cannotFindDirections) ->
-            binding.confirm.isEnabled = areDirectionsFound == true && cannotFindDirections == false
-        }
-
         binding.routePreviewOutline.clipToOutline = true
-        binding.routePreview.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            updateRoutePreview()
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    callbackFlow {
+                        val listener =
+                            View.OnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
+                                launch {
+                                    send(right - left to bottom - top)
+                                }
+                            }
+                        binding.routePreview.addOnLayoutChangeListener(listener)
+
+                        awaitClose { binding.routePreview.removeOnLayoutChangeListener(listener) }
+                    }.distinctUntilChanged().flatMapLatest { (width, height) ->
+                        viewModel.getRoutePreview(width, height, isDarkMode())
+                    }.collect {
+                        binding.routePreview.setImageBitmap(it)
+                    }
+                }
+
+                launch {
+                    viewModel.shouldShowMappingAppButton.collect {
+                        binding.openMappingApp?.makeVisibleIf(it)
+                    }
+                }
+
+                launch {
+                    viewModel.areDirectionsFound.collect {
+                        binding.progress.makeVisibleIf(!it)
+                    }
+                }
+
+                launch {
+                    viewModel.cannotFindDirections.collect {
+                        binding.cannotFindDirections.makeVisibleIf(it)
+                    }
+                }
+
+                launch {
+                    (viewModel.areDirectionsFound + viewModel.cannotFindDirections).collect { (areDirectionsFound, cannotFindDirections) ->
+                        binding.confirm.isEnabled =
+                            areDirectionsFound == true && cannotFindDirections == false
+                    }
+                }
+            }
         }
-    }
-
-    override fun onStart() {
-        super.onStart()
-
-        Prefetcher[application].start(FOREGROUND)
-    }
-
-    override fun onStop() {
-        super.onStop()
-
-        Prefetcher[application].stop(FOREGROUND)
     }
 }

@@ -18,9 +18,9 @@ package androidapp.byco.ui
 
 import android.app.Application
 import androidapp.byco.data.RideRecordingRepository
-import androidx.lifecycle.AndroidViewModel
+import androidapp.byco.util.BycoViewModel
 
-class StopRideActivityViewModel(private val app: Application) : AndroidViewModel(app) {
+class StopRideActivityViewModel(application: Application) : BycoViewModel(application) {
     val isRideBeingRecorded = RideRecordingRepository[app].isRideBeingRecorded
 
     fun stopRecording() {

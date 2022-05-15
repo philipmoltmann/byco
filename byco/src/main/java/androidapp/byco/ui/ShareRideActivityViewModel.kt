@@ -24,19 +24,29 @@ import android.content.Intent
 import android.graphics.Bitmap
 import androidapp.byco.FILE_PROVIDER_AUTHORITY
 import androidapp.byco.SHARE_DIRECTORY
-import androidapp.byco.data.PreviousRide
 import androidapp.byco.data.PreviousRidesRepository
 import androidapp.byco.data.ThumbnailRepository
 import androidapp.byco.data.writePreviousRide
 import androidapp.byco.lib.R
-import androidapp.byco.util.addSources
+import androidapp.byco.util.BycoViewModel
 import androidapp.byco.util.compat.putExcludeComponentsExtraCompat
+import androidapp.byco.util.plus
+import androidapp.byco.util.stateIn
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
-import androidx.lifecycle.*
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.CreationExtras
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import lib.gpx.DebugLog
 import lib.gpx.GPX_FILE_EXTENSION
@@ -45,11 +55,16 @@ import java.io.File
 import kotlin.math.abs
 import kotlin.random.Random
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ShareRideActivityViewModel(
-    private val app: Application,
+    application: Application,
+    private val savedStateHandle: SavedStateHandle,
     private val rideFileName: String
-) : AndroidViewModel(app) {
+) : BycoViewModel(application) {
     private val TAG = ShareRideActivityViewModel::class.java.simpleName
+
+    private val KEY_REMOVE_START_AND_END = "remove_start_and_end"
+
     private val MIN_REMOVE_START_END_METERS = 200f
     private val REMOVE_START_END_METERS = 500f
 
@@ -58,55 +73,36 @@ class ShareRideActivityViewModel(
     private val removeEnd = REMOVE_START_END_METERS * 2 - removeStart
     private lateinit var shareRideLauncher: ActivityResultLauncher<Intent>
 
-    private val ride = object : MediatorLiveData<PreviousRide>() {
-        init {
-            addSource(PreviousRidesRepository[app].previousRides) { previousRides ->
-                previousRides.find { previousRide -> previousRide.file.name == rideFileName }?.let {
-                    value = it
-                }
-            }
-        }
-    }
+    private val ride = PreviousRidesRepository[app].previousRides.map { previousRides ->
+        previousRides.find { previousRide -> previousRide.file.name == rideFileName }
+    }.stateIn(null)
 
     /** Get preview of to-be-shared ride */
-    fun getPreview(isDarkMode: Boolean) = object : MediatorLiveData<Bitmap>() {
-        var thumbnailLD: LiveData<Bitmap>? = null
-
-        init {
-            addSources(ride, removeStartAndEnd) {
-                val ride = ride.value ?: return@addSources
-
-                thumbnailLD?.let {
-                    removeSource(it)
-                }
-
-                thumbnailLD = ThumbnailRepository[app].getThumbnailWithHighlightedStartAndEnd(
+    fun getPreview(isDarkMode: Boolean) =
+        (ride + removeStartAndEnd).flatMapLatest { (ride, removeStartAndEnd) ->
+            ride?.let {
+                ThumbnailRepository[app].getThumbnailWithHighlightedStartAndEnd(
                     ride,
                     isDarkMode,
-                    if (removeStartAndEnd.value == true) {
+                    if (removeStartAndEnd) {
                         removeStart
                     } else {
                         0f
                     },
-                    if (removeStartAndEnd.value == true) {
+                    if (removeStartAndEnd) {
                         removeEnd
                     } else {
                         0f
                     }
                 )
-
-                addSource(thumbnailLD!!) {
-                    this.value = it
-                }
-            }
+            } ?: flowOf(Bitmap.createBitmap(1, 1, Bitmap.Config.ALPHA_8))
         }
-    }
 
-    private val removeStartAndEnd = MutableLiveData<Boolean>()
+    val removeStartAndEnd = savedStateHandle.getStateFlow(KEY_REMOVE_START_AND_END, false)
 
     /** Set if some of start and end of ride should be removed (for privacy) */
     fun setRemoveStartAndEnd(removeStartAndEnd: Boolean) {
-        this.removeStartAndEnd.value = removeStartAndEnd
+        savedStateHandle[KEY_REMOVE_START_AND_END] = removeStartAndEnd
     }
 
     /** Share a [ride] with apps that can use files with the [GPX_MIME_TYPE] */
@@ -122,12 +118,12 @@ class ShareRideActivityViewModel(
                     it.writePreviousRide(
                         app,
                         ride,
-                        removeStart = if (removeStartAndEnd.value == true) {
+                        removeStart = if (removeStartAndEnd.value) {
                             removeStart
                         } else {
                             0f
                         },
-                        removeEnd = if (removeStartAndEnd.value == true) {
+                        removeEnd = if (removeStartAndEnd.value) {
                             removeEnd
                         } else {
                             0f
@@ -186,12 +182,19 @@ class ShareRideActivityViewModel(
     }
 }
 
-class ShareRideActivityViewModelFactory(val app: Application, private val ride: String) :
-    ViewModelProvider.AndroidViewModelFactory(app) {
+class ShareRideActivityViewModelFactory(
+    val application: Application,
+    private val ride: String
+) :
+    ViewModelProvider.AndroidViewModelFactory(application) {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+    override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
         if (modelClass.isAssignableFrom(ShareRideActivityViewModel::class.java)) {
-            return ShareRideActivityViewModel(app, ride) as T
+            return ShareRideActivityViewModel(
+                application,
+                extras.createSavedStateHandle(),
+                ride
+            ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

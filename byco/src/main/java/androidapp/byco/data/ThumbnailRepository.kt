@@ -17,7 +17,6 @@
 package androidapp.byco.data
 
 import android.annotation.SuppressLint
-import android.app.Application
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -29,37 +28,45 @@ import android.location.Location
 import android.os.FileObserver.*
 import android.view.LayoutInflater
 import android.view.View
+import androidapp.byco.BycoApplication
 import androidapp.byco.THUMBNAILS_DIRECTORY
 import androidapp.byco.lib.R
 import androidapp.byco.ui.views.MapView
-import androidapp.byco.util.AsyncLiveData
 import androidapp.byco.util.CountryCode
+import androidapp.byco.util.Repository
 import androidapp.byco.util.SingleParameterSingletonOf
+import androidapp.byco.util.Trigger
 import androidapp.byco.util.compat.WEBP_COMPAT
 import androidapp.byco.util.compat.createFileObserverCompat
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.Observer
+import androidapp.byco.util.plus
+import androidapp.byco.util.stateIn
 import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.Dispatchers.Main
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.launch
 import lib.gpx.BasicLocation
 import lib.gpx.MapArea
 import lib.gpx.RecordedLocation
-import lib.gpx.Track
 import java.io.File
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.concurrent.TimeUnit.DAYS
 
 /** Data and action related to thumbnails of [PreviousRide]s */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ThumbnailRepository private constructor(
-    private val app: Application,
-    private val THUMBNAIL_SIZE: Int = 1024, // px
+    private val app: BycoApplication,
+    val THUMBNAIL_SIZE: Int = 1024, // px
     private val THUMBNAIL_MIN_EDGE: Int = 30, // px
     private val THUMBNAIL_MAX_EDGE: Int = 60, // px
     private val MAX_AGE: Long = DAYS.toMillis(365) // ms
-) {
+) : Repository(app) {
     /** Create a map view showing the whole [rideArea] */
     @SuppressLint("InflateParams")
     private fun getMapView(context: Context, rideArea: MapArea, width: Int, height: Int): MapView {
@@ -124,7 +131,67 @@ class ThumbnailRepository private constructor(
         )
     }
 
-    /** Render the thumbnail for a [rideArea] showing the [mapData] and highlighting the [track] */
+    /** Render the thumbnail for a `rideArea` showing the `mapData` and highlighting the `track` */
+    inner class ThumbnailRenderer(
+        rideArea: MapArea,
+        isDarkMode: Boolean,
+        clipArea: MapArea? = null,
+        width: Int = THUMBNAIL_SIZE,
+        height: Int = THUMBNAIL_SIZE,
+    ) {
+        private val map: MapView
+
+        init {
+            map = getMapView(app.createConfigurationContext(Configuration().apply {
+                uiMode =
+                    (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or if (isDarkMode) {
+                        Configuration.UI_MODE_NIGHT_YES
+                    } else {
+                        Configuration.UI_MODE_NIGHT_NO
+                    }
+            }), rideArea, width, height)
+
+            clipArea?.let { map.clipArea = it }
+        }
+
+        /**
+         * Set an prepare the data to be drawn.
+         */
+        suspend fun setMapData(
+            countryCode: CountryCode = null,
+            mapData: MapData = emptySet(),
+            track: TrackAsNodes = emptyList(),
+            trackColor: Int? = null,
+        ) {
+            map.visibleTrack = track
+            trackColor?.let { map.setCurrentRideColor(it) }
+
+            map.setMapDataSync(countryCode, mapData)
+        }
+
+        /**
+         * Draw the thumbnail onto [dst].
+         */
+        fun draw(
+            dst: Canvas,
+            background: Drawable? = null
+        ) {
+            if (background != null) {
+                map.background = background
+                map.draw(dst)
+            } else {
+                map.onDrawForeground(dst)
+            }
+        }
+
+        /**
+         * Recycle internal data.
+         */
+        fun recycle() {
+            map.recycle()
+        }
+    }
+
     suspend fun renderThumbnail(
         countryCode: CountryCode,
         mapData: MapData,
@@ -135,40 +202,26 @@ class ThumbnailRepository private constructor(
         background: Drawable? = null,
         width: Int = THUMBNAIL_SIZE,
         height: Int = THUMBNAIL_SIZE,
-        mapColor: Int? = null,
         trackColor: Int? = null
     ): Bitmap {
-        val map = getMapView(app.createConfigurationContext(Configuration().apply {
-            uiMode =
-                (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or if (isDarkMode) {
-                    Configuration.UI_MODE_NIGHT_YES
-                } else {
-                    Configuration.UI_MODE_NIGHT_NO
-                }
-        }), rideArea, width, height)
+        val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
 
-        val bitmap = Bitmap.createBitmap(
-            map.measuredWidth,
-            map.measuredHeight, Bitmap.Config.ARGB_8888
-        )
+        val renderer = ThumbnailRenderer(rideArea, isDarkMode, clipArea, width, height)
+        renderer.setMapData(countryCode, mapData, track, trackColor)
+        renderer.draw(Canvas(image), background)
+        renderer.recycle()
 
-        background?.let { map.background = it }
-        clipArea?.let { map.clipArea = it }
-        map.visibleTrack = track
-        mapColor?.let { map.setBackgroundColor(it) }
-        trackColor?.let { map.setCurrentRideColor(it) }
-        map.setMapDataSync(countryCode, mapData)
-        map.draw(Canvas(bitmap))
-
-        return bitmap
+        return image
     }
+
+    private val updateThumbnailTrigger = Trigger(repositoryScope)
 
     /**
      * Persist the [thumbnail] for a [ride].
      *
      * The created thumbnails will be stored on disk and can be read via [getThumbnail]
      */
-    internal suspend fun persistThumbnail(
+    internal fun persistThumbnail(
         thumbnail: Bitmap,
         ride: PreviousRide,
         isDarkMode: Boolean,
@@ -177,10 +230,8 @@ class ThumbnailRepository private constructor(
         tmp.outputStream().buffered().use { out -> thumbnail.compress(WEBP_COMPAT, 90, out) }
         tmp.renameTo(getThumbnailFileFor(ride, isDarkMode))
 
-        // File observers are unreliable, hence call the live datas manually
-        withContext(NonCancellable + Main.immediate) {
-            activeHasThumbnailLiveDatas.forEach { it.update() }
-        }
+        // File observers are unreliable, hence force update of thumbnails
+        updateThumbnailTrigger.trigger()
     }
 
     private fun getThumbnailFileFor(ride: PreviousRide, isDarkMode: Boolean): File {
@@ -198,133 +249,111 @@ class ThumbnailRepository private constructor(
         )
     }
 
-    // Only modified on main thread
-    private val activeHasThumbnailLiveDatas = mutableListOf<HasThumbnailLiveData>()
+    /**
+     * Flow whether there is a persisted thumbnail for this [ride].
+     *
+     * @see persistThumbnail
+     */
+    fun getHasThumbnail(ride: PreviousRide, isDarkMode: Boolean) = callbackFlow {
+        suspend fun update() {
+            send(getThumbnailFileFor(ride, isDarkMode).exists())
+        }
 
-    private inner class HasThumbnailLiveData(val ride: PreviousRide, val isDarkMode: Boolean) :
-        LiveData<Boolean>() {
-        private val directoryObserver = createFileObserverCompat(
+        val directoryObserver = createFileObserverCompat(
             getThumbnailFileFor(
                 ride,
                 isDarkMode
             ).parentFile!!
         ) { event: Int, _: String? ->
             if (event in setOf(CLOSE_WRITE, MOVED_TO, MOVED_FROM, DELETE)) {
+                launch {
+                    update()
+                }
+            }
+        }
+        launch {
+            updateThumbnailTrigger.flow.collect {
                 update()
             }
         }
 
-        override fun onActive() {
-            super.onActive()
+        directoryObserver.startWatching()
 
-            activeHasThumbnailLiveDatas.add(this)
-            directoryObserver.startWatching()
-            update()
-        }
-
-        override fun onInactive() {
-            super.onInactive()
-
-            activeHasThumbnailLiveDatas.remove(this)
-            directoryObserver.startWatching()
-        }
-
-        fun update() {
-            val hasThumbnail = getThumbnailFileFor(ride, isDarkMode).exists()
-            if (value != hasThumbnail) {
-                postValue(hasThumbnail)
-            }
-        }
-    }
-
-    /**
-     * LiveData whether there is a persisted thumbnail for this [ride].
-     *
-     * @see persistThumbnail
-     */
-    fun getHasThumbnail(ride: PreviousRide, isDarkMode: Boolean): LiveData<Boolean> {
-        return HasThumbnailLiveData(ride, isDarkMode)
-    }
+        awaitClose { directoryObserver.stopWatching() }
+    }.stateIn(getThumbnailFileFor(ride, isDarkMode).exists())
 
     /**
      * Get thumbnail with [highlightStart] meters of the beginning of the track and [highlightEnd]
      * of the eng highlighed in `R.color.removed_ride`.
      */
-    fun getThumbnailWithHighlightedStartAndEnd(
+    suspend fun getThumbnailWithHighlightedStartAndEnd(
         ride: PreviousRide,
         isDarkMode: Boolean,
         highlightStart: Float,
         highlightEnd: Float
-    ) = object : AsyncLiveData<Bitmap>() {
-        private val thumbnail = getThumbnail(ride, isDarkMode)
-        private val track = PreviousRidesRepository[app].getTrack(ride)
+    ) = (getThumbnail(
+        ride,
+        isDarkMode
+    ) + PreviousRidesRepository[app].getTrack(ride)).mapLatest { (thumbnail, track) ->
+        track?.let { fullTrack ->
+            val highlightedTrack = mutableListOf<MutableList<Node>>()
 
-        init {
-            requestUpdateIfChanged(thumbnail, track)
-        }
+            var startHighlighted = 0f
+            for (segment in fullTrack.segments) {
+                var lastHighlightedNode: RecordedLocation? = null
 
-        override suspend fun update(): Bitmap? {
-            val thumbnail = thumbnail.value ?: return null
-            return track.value?.let { fullTrack ->
-                val highlightedTrack = mutableListOf<MutableList<Node>>()
-
-                var startHighlighted = 0f
-                for (segment in fullTrack.segments) {
-                    var lastHighlightedNode: RecordedLocation? = null
-
-                    highlightedTrack.add(mutableListOf())
-                    for (node in segment) {
-                        if (lastHighlightedNode != null) {
-                            startHighlighted += lastHighlightedNode.distanceTo(node)
-                        }
-
-                        highlightedTrack.last().add(node.toNode())
-                        lastHighlightedNode = node
-
-                        if (startHighlighted >= highlightStart) {
-                            break
-                        }
+                highlightedTrack.add(mutableListOf())
+                for (node in segment) {
+                    if (lastHighlightedNode != null) {
+                        startHighlighted += lastHighlightedNode.distanceTo(node)
                     }
+
+                    highlightedTrack.last().add(node.toNode())
+                    lastHighlightedNode = node
 
                     if (startHighlighted >= highlightStart) {
                         break
                     }
                 }
 
-                var endHighlighted = 0f
-                for (segment in fullTrack.segments.reversed()) {
-                    var lastHighlightedNode: RecordedLocation? = null
+                if (startHighlighted >= highlightStart) {
+                    break
+                }
+            }
 
-                    highlightedTrack.add(mutableListOf())
-                    for (node in segment.reversed()) {
-                        if (lastHighlightedNode != null) {
-                            endHighlighted += lastHighlightedNode.distanceTo(node)
-                        }
+            var endHighlighted = 0f
+            for (segment in fullTrack.segments.reversed()) {
+                var lastHighlightedNode: RecordedLocation? = null
 
-                        highlightedTrack.last().add(node.toNode())
-                        lastHighlightedNode = node
-
-                        if (endHighlighted >= highlightEnd) {
-                            break
-                        }
+                highlightedTrack.add(mutableListOf())
+                for (node in segment.reversed()) {
+                    if (lastHighlightedNode != null) {
+                        endHighlighted += lastHighlightedNode.distanceTo(node)
                     }
+
+                    highlightedTrack.last().add(node.toNode())
+                    lastHighlightedNode = node
 
                     if (endHighlighted >= highlightEnd) {
                         break
                     }
                 }
 
-                renderThumbnail(
-                    null,
-                    emptySet(),
-                    ride.area,
-                    highlightedTrack.map { 0f to it.toTypedArray() },
-                    isDarkMode,
-                    background = BitmapDrawable(app.resources, thumbnail),
-                    trackColor = app.getColor(R.color.removed_ride)
-                )
-            } ?: thumbnail
-        }
+                if (endHighlighted >= highlightEnd) {
+                    break
+                }
+            }
+
+            renderThumbnail(
+                null,
+                emptySet(),
+                ride.area,
+                highlightedTrack.map { 0f to it.toTypedArray() },
+                isDarkMode,
+                background = BitmapDrawable(app.resources, thumbnail),
+                trackColor = app.getColor(R.color.removed_ride)
+            )
+        } ?: thumbnail
     }
 
     /**
@@ -333,60 +362,33 @@ class ThumbnailRepository private constructor(
      * This might be a temporary, lower quality one until a high quality one is created via
      * [persistThumbnail].
      */
-    fun getThumbnail(ride: PreviousRide, isDarkMode: Boolean): LiveData<Bitmap> {
-        return object : AsyncLiveData<Bitmap>(IO) {
-            private val hasThumbnail = getHasThumbnail(ride, isDarkMode)
-            private var trackLiveData: LiveData<Track>? = null
-
-            init {
-                requestUpdateIfChanged(hasThumbnail)
-            }
-
-            override suspend fun update(): Bitmap? {
-                if (hasThumbnail.value == true) {
-                    return BitmapFactory.decodeFile(
+    fun getThumbnail(ride: PreviousRide, isDarkMode: Boolean) =
+        getHasThumbnail(ride, isDarkMode).flatMapLatest { hasThumbnail ->
+            if (hasThumbnail) {
+                flowOf(
+                    BitmapFactory.decodeFile(
                         getThumbnailFileFor(
                             ride,
                             isDarkMode
                         ).absolutePath
                     )
-                } else {
-                    return when {
-                        trackLiveData == null -> {
-                            withContext(Main) {
-                                trackLiveData = PreviousRidesRepository[app].getTrack(ride)
-                                    .also { addSource(it) { requestUpdate() } }
-                            }
-
-                            null
-                        }
-                        trackLiveData?.value != null -> {
-                            val thumbnail = renderThumbnail(
-                                null,
-                                emptySet(),
-                                ride.area,
-                                trackLiveData!!.value!!.restrictTo(null),
-                                isDarkMode
-                            )
-
-                            withContext(Main + NonCancellable) {
-                                trackLiveData?.let { oldTrackLiveData ->
-                                    // don't need track anymore
-                                    removeSource(oldTrackLiveData)
-                                    trackLiveData = null
-                                }
-                            }
-
-                            thumbnail
-                        }
-                        else -> {
-                            null
-                        }
+                ).flowOn(IO)
+            } else {
+                PreviousRidesRepository[app].getTrack(ride).mapLatest { track ->
+                    if (track == null) {
+                        Bitmap.createBitmap(1, 1, Bitmap.Config.ALPHA_8)
+                    } else {
+                        renderThumbnail(
+                            null,
+                            emptySet(),
+                            ride.area,
+                            track.restrictTo(null),
+                            isDarkMode
+                        )
                     }
                 }
             }
         }
-    }
 
     init {
         File(app.cacheDir, THUMBNAILS_DIRECTORY).mkdirs()
@@ -398,27 +400,24 @@ class ThumbnailRepository private constructor(
             }
         }
 
-        PreviousRidesRepository[app].previousRides.observeForever(
-            object : Observer<List<PreviousRide>> {
-                override fun onChanged(value: List<PreviousRide>) {
-                    // Remove thumbnails of rides that do not exist anymore
-                    val validThumbnailFiles = value.flatMap { ride ->
-                        listOf(
-                            getThumbnailFileFor(ride, true),
-                            getThumbnailFileFor(ride, false)
-                        )
-                    }.toSet()
+        repositoryScope.launch {
+            // Wait until we are sure previousRides was loaded
+            val validRides = PreviousRidesRepository[app].previousRides.first { it.isNotEmpty() }
 
-                    File(app.cacheDir, THUMBNAILS_DIRECTORY).listFiles()?.filter {
-                        !validThumbnailFiles.contains(it)
-                    }?.forEach { it.delete() }
+            // Remove thumbnails of rides that do not exist anymore
+            val validThumbnailFiles = validRides.flatMap { ride ->
+                listOf(
+                    getThumbnailFileFor(ride, true),
+                    getThumbnailFileFor(ride, false)
+                )
+            }.toSet()
 
-                    // Only remove thumbnails once per instance of the app
-                    PreviousRidesRepository[app].previousRides.removeObserver(this)
-                }
-            })
+            File(app.cacheDir, THUMBNAILS_DIRECTORY).listFiles()?.filter {
+                !validThumbnailFiles.contains(it)
+            }?.forEach { it.delete() }
+        }
     }
 
     companion object :
-        SingleParameterSingletonOf<Application, ThumbnailRepository>({ ThumbnailRepository(it) })
+        SingleParameterSingletonOf<BycoApplication, ThumbnailRepository>({ ThumbnailRepository(it) })
 }

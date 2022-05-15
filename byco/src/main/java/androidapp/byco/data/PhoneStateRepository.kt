@@ -16,7 +16,6 @@
 
 package androidapp.byco.data
 
-import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -25,23 +24,35 @@ import android.net.ConnectivityManager
 import android.net.ConnectivityManager.NetworkCallback
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkCapabilities.*
+import android.net.NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL
+import android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET
+import android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED
+import android.net.NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED
 import android.net.NetworkRequest
-import androidapp.byco.data.PhoneStateRepository.NetworkType.*
-import androidapp.byco.util.AsyncLiveData
+import androidapp.byco.BycoApplication
+import androidapp.byco.data.PhoneStateRepository.NetworkType.METERED
+import androidapp.byco.data.PhoneStateRepository.NetworkType.NO_NETWORK
+import androidapp.byco.data.PhoneStateRepository.NetworkType.UNMETERED
+import androidapp.byco.util.Repository
 import androidapp.byco.util.SingleParameterSingletonOf
-import androidx.lifecycle.LiveData
+import androidapp.byco.util.stateIn
+import androidx.annotation.MainThread
+import kotlinx.coroutines.Dispatchers.Main
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import java.util.*
+import java.util.Date
 import java.util.concurrent.TimeUnit.SECONDS
 
 /** Not riding related phone state */
 class PhoneStateRepository private constructor(
-    private val app: Application,
+    private val app: BycoApplication,
     private val CONNECTION_CHECK_RETRY_DELAY: Long = SECONDS.toMillis(3)
-) {
+) : Repository(app) {
     enum class NetworkType {
         UNMETERED,
         METERED,
@@ -49,49 +60,11 @@ class PhoneStateRepository private constructor(
     }
 
     /** Currently connected [NetworkType] */
-    val networkType = object : AsyncLiveData<NetworkType>() {
-        private val cm = app.getSystemService(ConnectivityManager::class.java)
-        private var networkCheckRetryDelay = CONNECTION_CHECK_RETRY_DELAY
+    val networkType = callbackFlow {
+        val cm = app.getSystemService(ConnectivityManager::class.java)
+        var networkCheckRetryDelay = CONNECTION_CHECK_RETRY_DELAY
 
-        private val networkCallback = object : NetworkCallback() {
-            override fun onUnavailable() {
-                requestUpdate()
-            }
-
-            override fun onAvailable(network: Network) {
-                requestUpdate()
-            }
-
-            override fun onCapabilitiesChanged(
-                network: Network,
-                networkCapabilities: NetworkCapabilities
-            ) {
-                requestUpdate()
-            }
-
-            override fun onLost(network: Network) {
-                requestUpdate()
-            }
-        }
-
-        init {
-            value = NO_NETWORK
-        }
-
-        override fun onActive() {
-            super.onActive()
-
-            cm.registerNetworkCallback(NetworkRequest.Builder().build(), networkCallback)
-            requestUpdate()
-        }
-
-        override fun onInactive() {
-            super.onInactive()
-
-            cm.unregisterNetworkCallback(networkCallback)
-        }
-
-        override suspend fun update(): NetworkType? {
+        suspend fun update() {
             val activeNetwork = cm.activeNetwork
             val activeNetworkCapabilities = cm.getNetworkCapabilities(activeNetwork)
 
@@ -101,9 +74,11 @@ class PhoneStateRepository private constructor(
                         || activeNetworkCapabilities.hasCapability(NET_CAPABILITY_CAPTIVE_PORTAL) -> {
                     NO_NETWORK
                 }
+
                 activeNetworkCapabilities.hasCapability(NET_CAPABILITY_NOT_METERED)
                         && activeNetworkCapabilities.hasCapability(NET_CAPABILITY_NOT_RESTRICTED) ->
                     UNMETERED
+
                 else -> {
                     METERED
                 }
@@ -114,71 +89,150 @@ class PhoneStateRepository private constructor(
             // and never re-evaluate the connectivity. Hence force a periodic network check while
             // the network is not active.
             if (activeNetwork == null) {
-                liveDataScope.launch {
+                launch {
                     delay(networkCheckRetryDelay)
 
                     // Keep checking more slowly if previous checks failed.
                     networkCheckRetryDelay *= 2
                     ensureActive()
 
-                    requestUpdate()
+                    update()
                 }
             } else {
                 networkCheckRetryDelay = CONNECTION_CHECK_RETRY_DELAY
             }
 
-            return if (networkType == value) {
-                null
-            } else {
-                networkType
+            send(networkType)
+        }
+
+        val networkCallback = object : NetworkCallback() {
+            override fun onUnavailable() {
+                launch { update() }
+            }
+
+            override fun onAvailable(network: Network) {
+                launch { update() }
+            }
+
+            override fun onCapabilitiesChanged(
+                network: Network,
+                networkCapabilities: NetworkCapabilities
+            ) {
+                launch { update() }
+            }
+
+            override fun onLost(network: Network) {
+                launch { update() }
             }
         }
-    }
+
+        cm.registerNetworkCallback(NetworkRequest.Builder().build(), networkCallback)
+        update()
+
+        awaitClose {
+            cm.unregisterNetworkCallback(networkCallback)
+        }
+    }.stateIn(NO_NETWORK)
 
     /** Current date and time. Updates at least at beginning of every full minute */
-    val date = object : LiveData<Date>() {
-        private val tickReceiver = object : BroadcastReceiver() {
+    val date = callbackFlow {
+        val tickReceiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
-                value = Date()
+                launch {
+                    send(Date())
+                }
             }
         }
 
-        override fun onActive() {
-            super.onActive()
+        app.registerReceiver(tickReceiver, IntentFilter(Intent.ACTION_TIME_TICK))
 
-            app.registerReceiver(tickReceiver, IntentFilter(Intent.ACTION_TIME_TICK))
-            value = Date()
-        }
-
-        override fun onInactive() {
-            super.onInactive()
-
-            app.unregisterReceiver(tickReceiver)
-        }
-    }
+        awaitClose { app.unregisterReceiver(tickReceiver) }
+    }.stateIn(Date())
 
     /** Battery level in % */
-    val batteryLevel = object : LiveData<Int>() {
-        private val batteryLevelReceiver = object : BroadcastReceiver() {
+    val batteryLevel = callbackFlow {
+        val batteryLevelReceiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
-                value = intent.getIntExtra("level", 0)
+                launch {
+                    send(intent.getIntExtra("level", 0))
+                }
             }
         }
 
-        override fun onActive() {
-            super.onActive()
+        app.registerReceiver(batteryLevelReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            ?.let { batteryLevelReceiver.onReceive(app, it) }
 
-            app.registerReceiver(batteryLevelReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-                ?.let { batteryLevelReceiver.onReceive(app, it) }
+        awaitClose {
+            app.unregisterReceiver(batteryLevelReceiver)
+        }
+    }.stateIn(100)
+
+    /** Signals whenever a package changed. */
+    val packageChanged = callbackFlow {
+        val packageChangedReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                launch { send(intent) }
+            }
         }
 
-        override fun onInactive() {
-            super.onInactive()
+        app.registerReceiver(packageChangedReceiver,
+            IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply {
+                addAction(Intent.ACTION_PACKAGE_CHANGED)
+                addAction(Intent.ACTION_PACKAGE_REMOVED)
+                addDataScheme("package")
+            }
+        )
 
-            app.unregisterReceiver(batteryLevelReceiver)
+        awaitClose {
+            app.unregisterReceiver(packageChangedReceiver)
+        }
+    }.stateIn(Intent())
+
+    enum class ProcessPriority {
+        RIDING,
+        FOREGROUND,
+        BACKGROUND,
+        STOPPED,
+    }
+
+    /** What priority does the app-process currently have. */
+    inner class ProcessPriorityState {
+        /** Priorities of currently running activities, services, etc... .*/
+        private val priorities = mutableListOf<ProcessPriority>()
+        private val updatePriorities = MutableStateFlow(emptyList<ProcessPriority>())
+
+        val flow = updatePriorities.map { priorities ->
+            priorities.minOfOrNull { it } ?: ProcessPriority.STOPPED
+        }.stateIn(ProcessPriority.STOPPED)
+
+        /**
+         * Called by active units (e.g. Activities, Services, Jobs) to adjust the priority of this
+         * process.
+         */
+        @MainThread
+        fun onStart(priority: ProcessPriority) {
+            priorities.add(priority)
+            repositoryScope.launch(Main.immediate) {
+                updatePriorities.emit(priorities.toMutableList())
+            }
+        }
+
+        /**
+         * Called by active units (e.g. Activities, Services, Jobs) to adjust the priority of this
+         * process.
+         */
+        @MainThread
+        fun onStop(priority: ProcessPriority) {
+            priorities.remove(priority)
+            repositoryScope.launch(Main.immediate) {
+                // Copy list to make sure [flow] updates.
+                updatePriorities.emit(priorities.toMutableList())
+            }
         }
     }
 
+    val processPriority = ProcessPriorityState()
+
     companion object :
-        SingleParameterSingletonOf<Application, PhoneStateRepository>({ PhoneStateRepository(it) })
+        SingleParameterSingletonOf<BycoApplication, PhoneStateRepository>({ PhoneStateRepository(it) })
 }

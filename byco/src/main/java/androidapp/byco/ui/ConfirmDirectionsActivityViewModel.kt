@@ -17,47 +17,68 @@
 package androidapp.byco.ui
 
 import android.app.Application
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.graphics.Bitmap
-import android.graphics.Color
+import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.drawable.BitmapDrawable
-import android.location.Location
 import android.net.Uri
-import androidapp.byco.FixedLowPriorityThreads
-import androidapp.byco.data.*
-import androidapp.byco.util.*
+import androidapp.byco.LowPriority
+import androidapp.byco.data.LocationRepository
+import androidapp.byco.data.MapDataRepository
+import androidapp.byco.data.PhoneStateRepository
+import androidapp.byco.data.RouteFinderRepository
+import androidapp.byco.data.ThumbnailRepository
+import androidapp.byco.data.toNode
+import androidapp.byco.util.BycoViewModel
 import androidapp.byco.util.compat.resolveActivityCompat
+import androidapp.byco.util.mapBigDecimalSuspend
+import androidapp.byco.util.plus
+import androidapp.byco.util.stateIn
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.graphics.applyCanvas
-import androidx.lifecycle.*
-import kotlinx.coroutines.CoroutineDispatcher
+import androidx.lifecycle.SavedStateHandle
 import kotlinx.coroutines.Dispatchers.Default
 import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.Dispatchers.Main
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.channels.consume
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flatMapMerge
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import lib.gpx.BasicLocation
+import lib.gpx.DebugLog
 import lib.gpx.MapArea
-import lib.gpx.toBasicLocation
+import java.lang.ref.WeakReference
 import java.math.BigDecimal
 import java.math.BigDecimal.ONE
 import java.math.BigDecimal.TEN
 
 /** ViewModel for [ConfirmDirectionsActivity] */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ConfirmDirectionsActivityViewModel(
-    private val app: Application,
+    application: Application,
     private val state: SavedStateHandle
-) : AndroidViewModel(app) {
+) : BycoViewModel(application) {
+    private val TAG = ConfirmDirectionsActivity::class.java.simpleName
+
     private val START_LOCATION_KEY = "START_LOCATION_KEY"
     private val PREFETCH_PARALLEL = 3
 
@@ -67,327 +88,280 @@ class ConfirmDirectionsActivityViewModel(
     private lateinit var mappingAppLauncher: ActivityResultLauncher<Intent>
 
     /** Intent to launch Google maps directions to [RouteFinderRepository.rideStart] */
-    private val gmmIntent = object : MediatorLiveData<Intent>() {
-        private val packageChangedReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent?) {
-                update()
-            }
-        }
-
-        init {
-            addSource(RouteFinderRepository[app].rideStart) {
-                update()
-            }
-        }
-
-        private fun update() {
-            val rideStart = RouteFinderRepository[app].rideStart.value
-            if (rideStart == null) {
-                value = null
-                return
-            }
-
-            val gmmIntent = Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse(
-                    "google.navigation:q=${rideStart.latitude}," +
-                            "${rideStart.longitude}&mode=b"
+    private val gmmIntent =
+        (RouteFinderRepository[app].rideStart + PhoneStateRepository[app].packageChanged).map { (rideStart, _) ->
+            rideStart?.let {
+                val gmmIntent = Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse(
+                        "google.navigation:q=${rideStart.latitude}," +
+                                "${rideStart.longitude}&mode=b"
+                    )
                 )
-            )
-            gmmIntent.setPackage("com.google.android.apps.maps")
+                gmmIntent.setPackage("com.google.android.apps.maps")
 
-            val resolveInfo = app.packageManager.resolveActivityCompat(gmmIntent, 0)
-            value = if (resolveInfo == null) {
-                null
-            } else {
-                gmmIntent
+                app.packageManager.resolveActivityCompat(gmmIntent, 0)?.let { gmmIntent }
             }
-        }
-
-        override fun onActive() {
-            super.onActive()
-
-            app.registerReceiver(packageChangedReceiver,
-                IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply {
-                    addAction(Intent.ACTION_PACKAGE_CHANGED)
-                    addAction(Intent.ACTION_PACKAGE_REMOVED)
-                    addDataScheme("package")
-                }
-            )
-
-            update()
-        }
-
-        override fun onInactive() {
-            super.onInactive()
-
-            app.unregisterReceiver(packageChangedReceiver)
-        }
-    }
+        }.stateIn(null)
 
     /** Should the activity show a button to launch the mapping app (via [openMappingApp]) ? */
     val shouldShowMappingAppButton = gmmIntent.map {
         it != null
-    }
+    }.stateIn(true)
 
     /** Current location when this viewModel was created (persisted over life-cycle events) */
-    private val persistedLocationAtInit = object : MediatorLiveData<BasicLocation>() {
-        private val persistedState = state.getLiveData<BasicLocation>(START_LOCATION_KEY)
-
-        init {
-            if (persistedState.value != null) {
-                value = persistedState.value!!
-            } else {
-                val locationSource = LocationRepository[app].location
-                addSource(locationSource) {
-                    val locBasicLoc = it.toBasicLocation()
-                    persistedState.value = locBasicLoc
-                    value = locBasicLoc
-
-                    removeSource(locationSource)
-                }
+    private val persistedLocationAtInit =
+        LocationRepository[app].smoothedLocation.filterNotNull().take(1).map { smoothedLocation ->
+            if (state.get<BasicLocation>(START_LOCATION_KEY) == null) {
+                state[START_LOCATION_KEY] = smoothedLocation.location
             }
-        }
-    }
+            state.get<BasicLocation>(START_LOCATION_KEY)
+        }.stateIn(state.get<BasicLocation>(START_LOCATION_KEY))
 
     /** Searches for [route] */
+    @OptIn(ExperimentalCoroutinesApi::class)
     private val routeFinder =
-        (persistedLocationAtInit + RouteFinderRepository[app].rideStart).switchMap { (start, goal) ->
-            if (start == null || goal == null) {
-                null
-            } else {
-                // Current country code is probably valid, no need to re-resolve
-                RouteFinderRepository[app].findRoute(
-                    start,
-                    goal,
-                    providedCountryCode = LocationRepository[app].countryCode.value!!
-                )
-            }
-        }
+        (persistedLocationAtInit + RouteFinderRepository[app].rideStart).distinctUntilChanged()
+            .flatMapLatest { (start, goal) ->
+                if (start == null || goal == null) {
+                    flowOf(null)
+                } else {
+                    // Current country code is probably valid, no need to re-resolve
+                    RouteFinderRepository[app].findRoute(
+                        start,
+                        goal,
+                        providedCountryCode = LocationRepository[app].countryCode.value!!
+                    ).flowOn(Default)
+                }
+            }.stateIn(null)
 
     /**
      * The directions found. Returns intermediate, partial routes while searching for the best
      * route.
      */
     private val route = routeFinder.map {
-        if (it is ArrayList<BasicLocation>) {
-            it
-        } else {
-            ArrayList(it)
+        when (it) {
+            null -> {
+                null
+            }
+
+            is ArrayList<BasicLocation> -> {
+                it
+            }
+
+            else -> {
+                ArrayList(it)
+            }
+        }
+    }.stateIn(null)
+
+    /** The rectangular area the [route] is in */
+    private val routeAreaFlowsMutex = Mutex()
+    private val routeAreaFlows = mutableMapOf<Pair<Int, Int>, WeakReference<StateFlow<MapArea?>>>()
+    private suspend fun getRouteArea(width: Int, height: Int): StateFlow<MapArea?> {
+        routeAreaFlowsMutex.withLock {
+            routeAreaFlows.keys.forEach { key ->
+                if (routeAreaFlows[key]?.get() == null) {
+                    routeAreaFlows.remove(key)
+                }
+            }
+
+            return routeAreaFlows[width to height]?.get() ?: run {
+                val newAreaFlow = flow {
+                    val start = persistedLocationAtInit.first() ?: return@flow
+                    val goal = RouteFinderRepository[app].rideStart.first() ?: return@flow
+
+                    var area: MapArea? = null
+
+                    (route + areDirectionsFound).collect { (route, areDirectionsFound) ->
+                        val locsOnMap = mutableListOf(start, goal)
+                        route?.let { locsOnMap += it }
+
+                        // Extend (never shrink) map area
+                        if (!areDirectionsFound) {
+                            area?.let {
+                                locsOnMap += BasicLocation(it.minLatD, it.minLonD)
+                                locsOnMap += BasicLocation(it.maxLatD, it.maxLonD)
+                            }
+                        }
+
+                        var newArea = MapArea(
+                            locsOnMap.minOf { it.latitude },
+                            locsOnMap.minOf { it.longitude },
+                            locsOnMap.maxOf { it.latitude },
+                            locsOnMap.maxOf { it.longitude }
+                        )
+
+                        // Extend to square at beginning of search to avoid too many re-loads of
+                        // background
+                        if (area == null) {
+                            newArea =
+                                ThumbnailRepository[app].getThumbnailArea(newArea, width, height)
+                        }
+
+                        if ((area == null || !area!!.contains(newArea)) && newArea != area) {
+                            emit(newArea)
+                            area = newArea
+                        }
+                    }
+                }.stateIn(null)
+
+                routeAreaFlows[width to height] = WeakReference(newAreaFlow)
+
+                newAreaFlow
+            }
         }
     }
 
-    /** The rectangular area the [route] is in */
-    private val routeAreaLiveDatas = mutableMapOf<Pair<Int, Int>, AsyncLiveData<MapArea>>()
-    private fun getRouteArea(width: Int, height: Int) =
-        routeAreaLiveDatas.getOrPut(width to height) {
-            if (routeAreaLiveDatas.size > 2) {
-                routeAreaLiveDatas.clear()
-            }
-
-            return object : AsyncLiveData<MapArea>() {
-                init {
-                    addSources(
-                        route,
-                        persistedLocationAtInit,
-                        RouteFinderRepository[app].rideStart,
-                        areDirectionsFound
-                    ) {
-                        requestUpdate()
-                    }
-                }
-
-                override suspend fun update(): MapArea? {
-                    val start = persistedLocationAtInit.value ?: return null
-                    val goal = RouteFinderRepository[app].rideStart.value ?: return null
-
-                    val locsOnMap = mutableListOf(start, goal)
-                    route.value?.let { locsOnMap += it }
-
-                    // Extend (never shrink) map area
-                    if (areDirectionsFound.value != true) {
-                        value?.let {
-                            locsOnMap += BasicLocation(it.minLatD, it.minLonD)
-                            locsOnMap += BasicLocation(it.maxLatD, it.maxLonD)
-                        }
-                    }
-
-                    var newArea = MapArea(
-                        locsOnMap.minOf { it.latitude },
-                        locsOnMap.minOf { it.longitude },
-                        locsOnMap.maxOf { it.latitude },
-                        locsOnMap.maxOf { it.longitude }
-                    )
-
-                    // Extend to square at beginning of search to avoid too many re-loads of
-                    // background
-                    if (value == null) {
-                        newArea = ThumbnailRepository[app].getThumbnailArea(newArea, width, height)
-                    }
-
-                    return if ((value == null
-                                || !value!!.contains(newArea)
-                                ) && newArea != value
-                    ) {
-                        newArea
-                    } else {
-                        null
-                    }
-                }
-            }
-        }
-
-    abstract class BitmapLiveData(dispatcher: CoroutineDispatcher = Default) :
-        AsyncLiveData<Pair<MapArea, Bitmap>>(dispatcher)
-
     /** Background image of [route] */
-    private fun getRouteBackground(width: Int, height: Int, isDarkMode: Boolean) =
-        object : BitmapLiveData() {
-            private val TILE_WIDTH = ONE.divide(TEN.pow(MapDataRepository.TILE_SCALE))
-            private val thread = FixedLowPriorityThreads.random()
-            private var currentImageRouteArea: MapArea? = null
-            private var image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            private val routeArea = getRouteArea(width, height)
-            private var countryCode: String? = null
-            private var returnValueUpdate = Semaphore(1)
+    private suspend fun getRouteBackground(width: Int, height: Int, isDarkMode: Boolean) =
+        getRouteArea(width, height).flatMapLatest { routeArea ->
+            if (routeArea == null) {
+                flowOf(routeArea to Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888))
+            } else {
+                val returnValueUpdate = Mutex()
+                val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(image)
 
-            init {
-                addSources(routeArea) {
-                    requestUpdate()
-                }
-            }
+                var delayingUpdateSince = 0L
+                channelFlow {
+                    val TILE_WIDTH = ONE.divide(TEN.pow(MapDataRepository.TILE_SCALE))
+                    var countryCode: String? = null
 
-            /** draw one map tile worth of data onto background */
-            private suspend fun draw(routeArea: MapArea, tileKey: Pair<BigDecimal, BigDecimal>) {
-                val (lat, lon) = tileKey
-                val renderArea = MapArea(lat, lon, lat + TILE_WIDTH, lon + TILE_WIDTH)
+                    /** draw one map tile worth of data onto background */
+                    suspend fun draw(routeArea: MapArea, tileKey: Pair<BigDecimal, BigDecimal>) {
+                        val (lat, lon) = tileKey
+                        val renderArea = MapArea(lat, lon, lat + TILE_WIDTH, lon + TILE_WIDTH)
 
-                MapDataRepository[app].getMapData(
-                    renderArea,
-                    returnPartialData = false,
-                    loadStreetNames = false,
-                    lowPriority = true
-                ).observeAsChannel().consume {
-                    val mapData = receive()
+                        val mapData = MapDataRepository[app].getMapData(
+                            renderArea,
+                            returnPartialData = false,
+                            loadStreetNames = false,
+                            lowPriority = true
+                        ).first()
 
-                    returnValueUpdate.withPermit {
-                        if (routeArea == currentImageRouteArea) {
-                            val newBackground =
-                                ThumbnailRepository[app].renderThumbnail(
-                                    countryCode,
-                                    mapData,
-                                    routeArea,
-                                    emptyList(),
-                                    isDarkMode,
-                                    renderArea,
-                                    BitmapDrawable(app.resources, image),
-                                    width,
-                                    height
-                                )
-                            image = newBackground
-
-                            postValue(routeArea to image)
-                        }
-                    }
-                }
-            }
-
-            override suspend fun update(): Pair<MapArea, Bitmap>? {
-                val routeArea = routeArea.value ?: return null
-                postValue(null)
-
-                // Just prevent the background to hold onto every tile and thereby completely
-                // blocking the routefinding code
-                val paralellismLimiter = Semaphore(32)
-
-                withContext(thread) {
-                    returnValueUpdate.withPermit {
-                        currentImageRouteArea = routeArea
-                    }
-
-                    image.applyCanvas {
-                        image.eraseColor(Color.TRANSPARENT)
-                    }
-
-                    val tilesArea =
-                        ThumbnailRepository[app].getThumbnailArea(routeArea, width, height)
-
-                    // Only use single country code as otherwise this would slow us down
-                    if (countryCode == null) {
-                        countryCode = getCountryCode(
-                            app,
-                            Location("center").apply {
-                                latitude = (tilesArea.minLatD + tilesArea.maxLatD) / 2
-                                longitude = (tilesArea.minLonD + tilesArea.maxLonD) / 2
-                            },
-                            isCurrentLocation = false
+                        val renderer = thumbnailRepo.ThumbnailRenderer(
+                            routeArea,
+                            isDarkMode,
+                            renderArea,
+                            width,
+                            height
                         )
-                    }
+                        renderer.setMapData(countryCode, mapData)
 
-                    // As soon as the data is prefetched, draw each map tile
-                    launch(Main) {
-                        forBigDecimal(tilesArea.minLat, tilesArea.maxLat, TILE_WIDTH) { lat ->
-                            forBigDecimal(tilesArea.minLon, tilesArea.maxLon, TILE_WIDTH) { lon ->
-                                val tileKey = lat to lon
-                                val isPrefetchedLD = MapDataRepository[app].isPrefetched(tileKey)
-                                addSource(isPrefetchedLD) {
-                                    if (it) {
-                                        try {
-                                            viewModelScope.launch(Default) {
-                                                paralellismLimiter.withPermit {
-                                                    draw(routeArea, tileKey)
-                                                }
-                                            }
-                                        } finally {
-                                            launch(NonCancellable + Main) {
-                                                removeSource(isPrefetchedLD)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        returnValueUpdate.withLock {
+                            renderer.draw(canvas)
                         }
+
+                        send(Unit)
+
+                        renderer.recycle()
                     }
 
-                    repeat(PREFETCH_PARALLEL) {
-                        // Prefetch in parallel to drawing. Once a tile is prefetched the map is drawn
-                        // for this tile as the draw loop above has set up live-datas waiting for the
-                        // prefetching to be done.
-                        launch(IO) {
-                            forBigDecimal(tilesArea.minLat, tilesArea.maxLat, TILE_WIDTH) { lat ->
-                                forBigDecimal(
+                    withContext(LowPriority) {
+                        val tilesArea =
+                            ThumbnailRepository[app].getThumbnailArea(routeArea, width, height)
+
+                        // Only use single country code as otherwise this would slow us down
+                        if (countryCode == null) {
+                            countryCode = LocationRepository[app].countryCode.first()
+                        }
+
+                        fun tiles() = flow {
+                            mapBigDecimalSuspend(
+                                tilesArea.minLat,
+                                tilesArea.maxLat,
+                                TILE_WIDTH
+                            ) { lat ->
+                                mapBigDecimalSuspend(
                                     tilesArea.minLon,
                                     tilesArea.maxLon,
                                     TILE_WIDTH
                                 ) { lon ->
-                                    MapDataRepository[app].preFetchMapDataTile(lat to lon, true)
+                                    emit(lat to lon)
+                                }
+                            }
+                        }
+
+                        // Just prevent the background to hold onto every tile and thereby completely
+                        // blocking the routefinding code
+                        val DRAW_PARALLEL = 32
+                        val drawParalellismLimiter = Semaphore(DRAW_PARALLEL)
+
+                        // As soon as the data is prefetched, draw each map tile
+                        launch {
+                            tiles().flatMapMerge(1024) { tileKey ->
+                                // Wait for prefetched
+                                MapDataRepository[app].isPrefetched(tileKey).filter { it }.take(1)
+                                    .map { tileKey }
+                            }.collect { tileKey ->
+                                drawParalellismLimiter.acquire()
+                                launch {
+                                    draw(routeArea, tileKey)
+                                    drawParalellismLimiter.release()
+                                }
+                            }
+                        }
+
+                        repeat(PREFETCH_PARALLEL) { parallel ->
+                            // Prefetch in parallel to drawing. Once a tile is prefetched the map is drawn
+                            // for this tile as the draw loop above has set up flows waiting for the
+                            // prefetching to be done.
+                            launch(IO) {
+                                var skipCounter = parallel
+                                tiles().collect { tileKey ->
+                                    if (skipCounter == 0) {
+                                        while (!MapDataRepository[app].isPrefetched(tileKey)
+                                                .first()
+                                        ) {
+                                            val prefetched =
+                                                MapDataRepository[app].preFetchMapDataTile(
+                                                    tileKey,
+                                                    true
+                                                )
+
+                                            if (!prefetched) {
+                                                DebugLog.i(TAG, "failed to prefetch $tileKey")
+                                                delay(100)
+                                            } else {
+                                                break
+                                            }
+                                        }
+                                    }
+
+                                    skipCounter = (skipCounter + 1) % PREFETCH_PARALLEL
                                 }
                             }
                         }
                     }
+                }.mapLatest {
+                    val now = System.currentTimeMillis()
+                    // Wait some time for newer data to come and cancel this transform.
+                    // This way the data is only updated with 5 FPS reducing the overhead of the
+                    // image copying.
+                    delay(delayingUpdateSince - now + 200)
+
+                    withContext(NonCancellable) {
+                        returnValueUpdate.withLock {
+                            routeArea to image.copy(image.config, false)
+                        }.also {
+                            delayingUpdateSince = now
+                        }
+                    }
                 }
-                return null
             }
         }
 
     /** Get image of [route] (no background) */
-    private fun getRouteForeground(width: Int, height: Int, isDarkMode: Boolean) =
-        object : BitmapLiveData() {
-            private val routeArea = getRouteArea(width, height)
-
-            init {
-                addSources(routeArea, route) {
-                    requestUpdate()
-                }
-            }
-
-            override suspend fun update(): Pair<MapArea, Bitmap>? {
-                val route = route.value ?: return null
-                val routeArea = routeArea.value ?: return null
-
-                return routeArea to thumbnailRepo.renderThumbnail(
+    private suspend fun getRouteForeground(width: Int, height: Int, isDarkMode: Boolean) =
+        (getRouteArea(width, height) + route).mapLatest { (routeArea, route) ->
+            if (route == null || routeArea == null) {
+                null
+            } else {
+                routeArea to thumbnailRepo.renderThumbnail(
                     /* does not matter as we are only rendering route */ "US",
-                    /* no map data in foreground, all map data is in background */ emptySet(),
+                    /* no map data in foreground, all map data is in background */
+                    emptySet(),
                     routeArea,
                     listOf(0f to Array(route.size) { i ->
                         val loc = route[i]
@@ -397,58 +371,45 @@ class ConfirmDirectionsActivityViewModel(
                     isDarkMode,
                     width = width,
                     height = height,
-                    // No background so that background can be seen below
-                    mapColor = Color.TRANSPARENT
                 )
             }
         }
 
     /* Get preview of route with foreground and background */
-    fun getRoutePreview(width: Int, height: Int, isDarkMode: Boolean) =
-        object : AsyncLiveData<Bitmap>() {
-            private val background = getRouteBackground(width, height, isDarkMode)
-            private val foreground = getRouteForeground(width, height, isDarkMode)
-            private val bitmapDrawPaint = Paint()
+    suspend fun getRoutePreview(width: Int, height: Int, isDarkMode: Boolean) =
+        (getRouteBackground(width, height, isDarkMode) + getRouteForeground(
+            width,
+            height,
+            isDarkMode
+        )).mapLatest { (background, foreground) ->
+            val bitmapDrawPaint = Paint()
 
-            init {
-                addSources(background, foreground) {
-                    requestUpdate()
-                }
-            }
-
-            override suspend fun update(): Bitmap? {
-                val foreground = foreground.value
-                val background = background.value
-
-                if (foreground == null) {
-                    if (background != null) {
-                        return background.second
-                    }
-                } else {
-                    if (background == null) {
-                        return foreground.second
-                    } else {
-                        if (background.first == foreground.first) {
-                            return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                                .applyCanvas {
-                                    drawBitmap(background.second, 0F, 0F, bitmapDrawPaint)
-                                    drawBitmap(foreground.second, 0F, 0F, bitmapDrawPaint)
-                                }
-                        }
+            if (foreground == null) {
+                return@mapLatest background.second
+            } else {
+                if (background.first == foreground.first) {
+                    return@mapLatest Bitmap.createBitmap(
+                        width,
+                        height,
+                        Bitmap.Config.ARGB_8888
+                    ).applyCanvas {
+                        drawBitmap(background.second, 0F, 0F, bitmapDrawPaint)
+                        drawBitmap(foreground.second, 0F, 0F, bitmapDrawPaint)
                     }
                 }
-                return null
             }
+            null
         }
 
     /** Have directions for a route be found? */
     val areDirectionsFound =
         (route + RouteFinderRepository[app].rideStart).map { (route, rideStart) ->
             route?.isEmpty() == true || route?.last() == rideStart
-        }
+        }.stateIn(false)
 
     /** Is it impossible to find directions ? */
-    val cannotFindDirections = route.map { it.size <= 1 }
+    val cannotFindDirections =
+        route.map { route -> route?.let { it.size <= 1 } ?: false }.stateIn(false)
 
     /** Cancel the directions finding dialog */
     fun cancel(activity: AppCompatActivity) {
