@@ -77,10 +77,12 @@ class ThumbnailRepository private constructor(
         )
         map.layout(0, 0, map.measuredWidth, map.measuredHeight)
 
-        map.animateToLocation(Location("center").apply {
-            latitude = (rideArea.maxLatD + rideArea.minLatD) / 2
-            longitude = (rideArea.maxLonD + rideArea.minLonD) / 2
-        })
+        map.animateToLocation(
+            Location("center").apply {
+                latitude = (rideArea.maxLatD + rideArea.minLatD) / 2
+                longitude = (rideArea.maxLonD + rideArea.minLonD) / 2
+            }, animate = false
+        )
 
         val topLeft = BasicLocation(rideArea.maxLatD, rideArea.minLonD)
 

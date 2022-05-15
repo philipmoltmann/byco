@@ -34,7 +34,11 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/speedBackground" />
+        app:layout_constraintTop_toBottomOf="@id/speedBackground"
+        app:locationIndicator="@drawable/cursor"
+        app:locationIndicatorWidth="70dp"
+        app:directionToCurrentIndicator="@drawable/directions_indicator"
+        app:directionToCurrentIndicatorWidth="140dp" />
 
     <ImageView
         android:id="@+id/gradient_corner"
@@ -55,28 +59,6 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/gradient_corner"
         app:layout_constraintTop_toTopOf="@id/overflow_menu"
-        tools:ignore="ContentDescription" />
-
-    <ImageView
-        android:id="@+id/cursor"
-        android:layout_width="70dp"
-        android:layout_height="70dp"
-        android:layout_marginBottom="50dp"
-        android:src="@drawable/cursor"
-        app:layout_constraintBottom_toBottomOf="@id/map"
-        app:layout_constraintEnd_toEndOf="@id/map"
-        app:layout_constraintStart_toStartOf="@id/map"
-        tools:ignore="ContentDescription" />
-
-    <ImageView
-        android:id="@+id/directionIndicator"
-        android:layout_width="140dp"
-        android:layout_height="140dp"
-        android:src="@drawable/directions_indicator"
-        app:layout_constraintBottom_toBottomOf="@id/cursor"
-        app:layout_constraintEnd_toEndOf="@id/cursor"
-        app:layout_constraintStart_toStartOf="@id/cursor"
-        app:layout_constraintTop_toTopOf="@id/cursor"
         tools:ignore="ContentDescription" />
 
     <View

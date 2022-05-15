@@ -101,7 +101,8 @@ class RidingActivity : AppCompatActivity() {
                             } else {
                                 null
                             },
-                            max(0, now - lastLocationUpdate)
+                            max(0, now - lastLocationUpdate),
+                            animate = true
                         )
 
                         lastLocation = currentLocation
@@ -302,10 +303,6 @@ class RidingActivity : AppCompatActivity() {
             binding.locationPermissionRationale.makeVisibleIf(shouldShowPrompt)
         }
 
-        viewModel.hasLocationPermission.observe(this) { hasPermission ->
-            binding.cursor.makeVisibleIf(hasPermission)
-        }
-
         viewModel.currentClimbElevationProfile.observe(this) { (progress, elevations) ->
             val showHideElevationProfileAnim =
                 ValueAnimator.AnimatorUpdateListener { valueAnimator ->
@@ -337,8 +334,7 @@ class RidingActivity : AppCompatActivity() {
         }
 
         viewModel.bearingToTrack.observe(this) { bearing ->
-            binding.directionIndicator.makeVisibleIf(bearing != null)
-            bearing?.let { binding.directionIndicator.rotation = bearing }
+            binding.map.directionToCurrentIndicatorBearing = bearing
         }
 
         (viewModel.isUsingMiles + viewModel.climbLeft).observe(this) { (isUsingMiles, left) ->

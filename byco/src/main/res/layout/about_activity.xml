@@ -109,22 +109,44 @@
         android:textStyle="normal"
         android:layout_marginBottom="8dp"
         android:textColor="@color/web_links"
-        app:layout_constraintBottom_toTopOf="@+id/licenses"
+        app:layout_constraintBottom_toTopOf="@+id/dependencies_licenses"
         app:layout_constraintStart_toStartOf="parent"
         tools:ignore="UseCompatTextViewDrawableXml" />
 
     <TextView
-        android:id="@+id/licenses"
+        android:id="@+id/licenses_label"
+        style="@style/BycoText.Small"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/licenses"
+        app:layout_constraintBottom_toTopOf="@+id/close"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <TextView
+        android:id="@+id/app_license"
         style="@style/BycoText.Small"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:clickable="true"
         android:focusable="true"
-        android:text="@string/licenses"
+        android:text="@string/app_license"
         android:textStyle="normal"
         android:textColor="@color/web_links"
         app:layout_constraintBottom_toTopOf="@+id/close"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintStart_toEndOf="@id/licenses_label" />
+
+    <TextView
+        android:id="@+id/dependencies_licenses"
+        style="@style/BycoText.Small"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:clickable="true"
+        android:focusable="true"
+        android:text="@string/dependencies_license"
+        android:textStyle="normal"
+        android:textColor="@color/web_links"
+        app:layout_constraintBottom_toTopOf="@+id/close"
+        app:layout_constraintStart_toEndOf="@id/app_license" />
 
     <Button
         android:id="@+id/close"

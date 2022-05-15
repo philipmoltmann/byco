@@ -105,19 +105,10 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
         }
     } as LiveData<Set<Way>>
 
-    val hasLocationPermission = LocationRepository[app].hasLocationPermission
+    private val hasLocationPermission = LocationRepository[app].hasLocationPermission
     private val shouldShowLocationPermissionRationale = MutableLiveData<Boolean>()
 
-    val shouldShowLocationPermissionPrompt = object : MediatorLiveData<Boolean>() {
-        init {
-            addSources(hasLocationPermission, shouldShowLocationPermissionRationale) { update() }
-        }
-
-        private fun update() {
-            value = hasLocationPermission.value != true
-                    && shouldShowLocationPermissionRationale.value == true
-        }
-    }
+    val shouldShowLocationPermissionPrompt = Transformations.map(hasLocationPermission) {!it}
 
     /** Is currently a track (from a previous ride) shown? */
     val isShowingTrack =

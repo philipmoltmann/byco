@@ -2,34 +2,24 @@ plugins {
     id 'com.android.application'
     id 'kotlin-android'
     id 'com.google.gms.google-services'
-    id 'com.google.firebase.crashlytics'
-    id 'com.google.firebase.firebase-perf'
+    id 'com.google.android.gms.oss-licenses-plugin'
 }
 
 android {
-    compileSdk 31
+    compileSdk target_sdk
 
     defaultConfig {
         applicationId "androidapp.byco"
         minSdk 23
-        targetSdk 31
-        versionCode 34
-        versionName "2.0.0-rc23"
+        targetSdk target_sdk
+        versionCode 46
+        versionName "2.1.9"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
-        debug {
-            manifestPlaceholders = [crashlyticsCollectionEnabled: "false",
-                                    performanceCollectionEnabled: "false",
-                                    analyticsCollectionEnabled: "false"]
-        }
-
         release {
-            manifestPlaceholders = [crashlyticsCollectionEnabled: "true",
-                                    performanceCollectionEnabled: "true",
-                                    analyticsCollectionEnabled: "true"]
             shrinkResources true
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -47,6 +37,7 @@ android {
     kotlinOptions {
         jvmTarget = '1.8'
     }
+    namespace 'androidapp.byco'
 }
 
 dependencies {
@@ -56,11 +47,8 @@ dependencies {
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlin_version"
     implementation 'androidx.lifecycle:lifecycle-livedata-core-ktx:2.4.1'
     implementation 'com.google.android.gms:play-services-location:19.0.1'
-    implementation 'com.google.firebase:firebase-crashlytics-ktx'
-    implementation 'com.google.firebase:firebase-analytics-ktx'
-    implementation 'com.google.firebase:firebase-perf-ktx'
 
-    androidTestImplementation 'androidx.appcompat:appcompat:1.4.1'
+    androidTestImplementation 'androidx.appcompat:appcompat:1.4.2'
     androidTestImplementation 'androidx.test:core:1.4.0'
     androidTestImplementation 'androidx.test.ext:junit-ktx:1.1.3'
     androidTestImplementation 'androidx.test:runner:1.4.0'

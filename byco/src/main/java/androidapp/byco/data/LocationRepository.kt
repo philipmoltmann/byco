@@ -305,7 +305,15 @@ class LocationRepository internal constructor(
     }
 
     /** Speed */
-    val speed = Transformations.map(location) { Speed(location.value?.speed ?: 0F) }
+    val speed = object : MediatorLiveData<Speed>() {
+        init {
+            addSource(location) { location ->
+                if (location != null && !location.speed.isNaN()) {
+                    value = Speed(location.speed)
+                }
+            }
+        }
+    }
 
     companion object :
         SingleParameterSingletonOf<Application, LocationRepository>({ LocationRepository(it) })

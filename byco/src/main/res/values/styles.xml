@@ -87,6 +87,10 @@
         <item name="android:textSize">@dimen/smallText</item>
     </style>
 
+    <style name="BycoText.VerySmall">
+        <item name="android:textSize">@dimen/verySmallText</item>
+    </style>
+
     <style name="BycoText.Large">
         <item name="android:textSize">@dimen/largeText</item>
     </style>

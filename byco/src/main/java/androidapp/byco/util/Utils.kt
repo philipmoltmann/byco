@@ -16,6 +16,7 @@
 
 package androidapp.byco.util
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.res.Configuration
 import android.view.View
@@ -210,6 +211,24 @@ fun rotationBetweenBearings(a: Float, b: Float): Float {
 }
 
 /**
+ * Return bearing in between `-180` and `180`
+ */
+fun canonicalizeBearing(bearing: Float): Float {
+    var adjustedBearing = bearing
+    while (adjustedBearing < 0) {
+        adjustedBearing += 360
+    }
+
+    adjustedBearing %= 360
+
+    return if (adjustedBearing > 180) {
+        adjustedBearing - 360
+    } else {
+        adjustedBearing
+    }
+}
+
+/**
  * Add multiple sources.
  */
 fun MediatorLiveData<*>.addSources(vararg sources: LiveData<*>, onChanged: Observer<Any>) {
@@ -226,6 +245,11 @@ fun Double.restrictTo(min: Double, max: Double): Double {
 /* increase/decrease value to be in at or in between min and max */
 fun Double.restrictTo(min: Int, max: Int): Double {
     return restrictTo(min.toDouble(), max.toDouble())
+}
+
+/** Average over a list */
+fun <L> List<L>.averageOf(getAverageField: (L) -> Double): Double {
+    return sumOf { getAverageField(it) } / size
 }
 
 /** Is this context current using dark UI mode? */

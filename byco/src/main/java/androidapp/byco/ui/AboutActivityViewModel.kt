@@ -46,7 +46,7 @@ class AboutActivityViewModel(private val app: Application) : AndroidViewModel(ap
         )
     }
 
-    fun openLicenses(activity: Activity) {
+    fun openDependenciesLicenses(activity: Activity) {
         try {
             activity.startActivity(Intent("androidapp.byco.action.SHOW_LICENSES").apply {
                 `package` = activity.packageName
@@ -54,5 +54,9 @@ class AboutActivityViewModel(private val app: Application) : AndroidViewModel(ap
         } catch (e: ActivityNotFoundException) {
             Toast.makeText(app, R.string.cannot_find_licenses, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun openAppLicenses(activity: Activity) {
+        activity.startActivity(Intent(activity, AppLicenseActivity::class.java))
     }
 }

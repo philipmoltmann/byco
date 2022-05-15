@@ -34,7 +34,11 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/speedBackground"/>
+        app:layout_constraintTop_toBottomOf="@id/speedBackground"
+        app:locationIndicator="@drawable/cursor"
+        app:locationIndicatorWidth="100dp"
+        app:directionToCurrentIndicator="@drawable/directions_indicator"
+        app:directionToCurrentIndicatorWidth="200dp" />
 
     <androidx.appcompat.widget.AppCompatImageView
         android:id="@+id/map_fade"
@@ -45,28 +49,6 @@
         app:layout_constraintEnd_toEndOf="@+id/map"
         app:layout_constraintStart_toStartOf="@+id/map"
         app:layout_constraintTop_toTopOf="@+id/map" />
-
-    <ImageView
-        android:id="@+id/cursor"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
-        android:layout_marginBottom="50dp"
-        android:src="@drawable/cursor"
-        app:layout_constraintBottom_toBottomOf="@id/map"
-        app:layout_constraintEnd_toEndOf="@id/map"
-        app:layout_constraintStart_toStartOf="@id/map"
-        tools:ignore="ContentDescription" />
-
-    <ImageView
-        android:id="@+id/directionIndicator"
-        android:layout_width="200dp"
-        android:layout_height="200dp"
-        android:src="@drawable/directions_indicator"
-        app:layout_constraintBottom_toBottomOf="@id/cursor"
-        app:layout_constraintEnd_toEndOf="@id/cursor"
-        app:layout_constraintStart_toStartOf="@id/cursor"
-        app:layout_constraintTop_toTopOf="@id/cursor"
-        tools:ignore="ContentDescription" />
 
     <View
         android:id="@+id/speedBackgroundDividerTop"

@@ -1,5 +1,6 @@
 rootProject.name = "Byco"
 include ':byco'
 include ':gpxlib'
+include ':gpxplayer'
 include ':app'
 include ':benchmark'

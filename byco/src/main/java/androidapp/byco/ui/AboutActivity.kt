@@ -43,7 +43,8 @@ class AboutActivity : AppCompatActivity() {
 
         binding.close.setOnClickListener { viewModel.close(this) }
         binding.privacyPolicy.setOnClickListener { viewModel.openPrivacyPolicy(this) }
-        binding.licenses.setOnClickListener { viewModel.openLicenses(this) }
+        binding.dependenciesLicenses.setOnClickListener { viewModel.openDependenciesLicenses(this) }
+        binding.appLicense.setOnClickListener { viewModel.openAppLicenses(this) }
     }
 
     override fun onStart() {

@@ -90,9 +90,13 @@
 
     <string name="about">About</string>
     <string name="close">Close</string>
-    <string name="licenses">Licenses</string>
+    <string name="licenses">Licenses:\ </string>
+    <string name="app_license">App,\ </string>
+    <string name="dependencies_license">Dependencies</string>
     <string name="cannot_find_licenses">Cannot find licences</string>
     <string name="privacy_link">Privacy Policy</string>
+
+    <string name="app_license_activity_title">App License</string>
 
     <string name="save_to_file">Save to file</string>
     <string name="save_to_file_message">Save %s to file</string>

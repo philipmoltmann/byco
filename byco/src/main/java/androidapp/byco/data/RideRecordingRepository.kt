@@ -20,7 +20,9 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.Context.BIND_AUTO_CREATE
 import android.content.ServiceConnection
+import android.os.DeadObjectException
 import android.os.IBinder
+import android.util.Log
 import androidapp.byco.background.IRideClient
 import androidapp.byco.background.IRideRecorder
 import androidapp.byco.background.RideRecorder
@@ -42,6 +44,8 @@ import java.io.File
 class RideRecordingRepository internal constructor(
     private val app: Application,
 ) {
+    private val TAG = RideRecordingRepository::class.java.simpleName
+
     private val ONGOING_RECORDING_FILE = "ongoing-recording-"
 
     /** Scope used to keep track of [onService] commands */
@@ -83,31 +87,35 @@ class RideRecordingRepository internal constructor(
             }
 
             override fun onServiceConnected(name: ComponentName?, newService: IBinder) {
-                IRideRecorder.Stub.asInterface(newService).also {
-                    it.registerClient(object : IRideClient.Stub() {
-                        override fun onRideChanged(
-                            isRideBeingRecorded: Boolean, rideTime: Duration?,
-                            rideStart: BasicLocation?, distance: Distance?
-                        ) {
-                        if (isRideBeingRecorded) {
-                            postValue(Triple(rideTime, rideStart, distance))
-                        } else {
-                            postValue(Triple(null, null, null))
-                        }
+                try {
+                    IRideRecorder.Stub.asInterface(newService).also {
+                        it.registerClient(object : IRideClient.Stub() {
+                            override fun onRideChanged(
+                                isRideBeingRecorded: Boolean, rideTime: Duration?,
+                                rideStart: BasicLocation?, distance: Distance?
+                            ) {
+                                if (isRideBeingRecorded) {
+                                    postValue(Triple(rideTime, rideStart, distance))
+                                } else {
+                                    postValue(Triple(null, null, null))
+                                }
+                            }
+                        })
                     }
-                })
+                } catch (e: DeadObjectException) {
+                    Log.e(TAG, "Could not connect to service", e)
+                }
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) {
+                // empty
+            }
+
+            override fun onInactive() {
+                super.onInactive()
+                app.unbindService(this)
             }
         }
-
-        override fun onServiceDisconnected(name: ComponentName?) {
-            // empty
-        }
-
-        override fun onInactive() {
-            super.onInactive()
-            app.unbindService(this)
-        }
-    }
 
     /** How long it the recording already on going? */
     val rideTime = object : MediatorLiveData<Duration?>() {

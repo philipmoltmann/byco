@@ -16,6 +16,7 @@
 
 package androidapp.byco.ui.views
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.*
 import android.graphics.Color.*
@@ -24,6 +25,7 @@ import android.location.Location
 import android.os.SystemClock
 import android.util.AttributeSet
 import android.util.TypedValue
+import android.view.MotionEvent
 import android.view.View
 import androidapp.byco.data.*
 import androidapp.byco.data.OsmDataProvider.BicycleType.DESIGNATED
@@ -31,9 +33,7 @@ import androidapp.byco.data.OsmDataProvider.BicycleType.DISMOUNT
 import androidapp.byco.data.OsmDataProvider.HighwayType
 import androidapp.byco.data.OsmDataProvider.HighwayType.*
 import androidapp.byco.lib.R
-import androidapp.byco.util.CountryCode
-import androidapp.byco.util.areBicyclesAllowedByDefault
-import androidapp.byco.util.rotationBetweenBearings
+import androidapp.byco.util.*
 import androidx.annotation.ColorInt
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatActivity
@@ -47,6 +47,7 @@ import kotlinx.coroutines.Dispatchers.Main
 import lib.gpx.BasicLocation
 import lib.gpx.DebugLog
 import lib.gpx.MapArea
+import lib.gpx.toBasicLocation
 import java.math.BigDecimal
 import java.math.BigDecimal.ZERO
 import kotlin.coroutines.coroutineContext
@@ -79,6 +80,55 @@ val DISPLAYED_HIGHWAY_TYPES = listOf(
     BAD_PATH, // below everything, as only usable in emergencies
 ).reversed()
 
+private typealias Vector = DoubleArray
+
+/**
+ * Verify that the vector is valid
+ */
+private fun Vector.isValid(): Boolean {
+    return size == 2
+}
+
+private fun vectorOf(x: Double, y: Double): Vector {
+    return doubleArrayOf(x, y)
+}
+
+@JvmName("vectorOfInt")
+private fun vectorOf(x: Int, y: Int): Vector {
+    return vectorOf(x.toDouble(), y.toDouble())
+}
+
+@JvmName("vectorOfFloat")
+private fun vectorOf(x: Float, y: Float): Vector {
+    return vectorOf(x.toDouble(), y.toDouble())
+}
+
+/**
+ * Scale vector down by a.
+ */
+private operator fun Vector.div(a: Double): DoubleArray {
+    assert(isValid())
+    return vectorOf(x / a, y / a)
+}
+
+private val Vector.x: Double
+    get() {
+        assert(isValid())
+        return this[0]
+    }
+
+private val Vector.y: Double
+    get() {
+        assert(isValid())
+        return this[1]
+    }
+
+private val Vector.length: Double
+    get() {
+        assert(isValid())
+        return sqrt(x * x + y * y)
+    }
+
 /**
  * A view showing a map.
  *`
@@ -98,6 +148,8 @@ class MapView(
 
     private val CAMERA_Z = 15f
     private val MAX_FPS = 30
+    private val DRAGGED_CENTER_TIMEOUT = 5000L // ms
+    private val ANIMATION_DURATION_AFTER_DRAGGED_CENTER = 1000L // ms
 
     private val antiAliasingPaint = Paint().apply { isAntiAlias = true }
 
@@ -121,6 +173,10 @@ class MapView(
 
     private var onewayIndicator: Drawable? = null
     private var onewayIndicatorFrequency = 0.001
+    private var locationIndicator: Drawable? = null
+    private var locationIndicatorWidth = 0
+    private var directionToCurrentIndicator: Drawable? = null
+    private var directionToCurrentIndicatorWidth = 0
 
     private val styledAttrs =
         context.theme.obtainStyledAttributes(attrs, R.styleable.MapView, defStyle, defStyleRes)
@@ -149,9 +205,9 @@ class MapView(
     private val tiltMatrix = Matrix()
     private val tilt = styledAttrs.getFloat(R.styleable.MapView_tilt, 0f)
 
-    /** Job used to move the [center] in [animateToLocation] */
-    private var centerInterpolator: Job? = null
-    private var centerUpdater: Job? = null
+    /** Job used to move the [centerAndLocation] in [animateToLocation] */
+    private var centerAndLocationInterpolator: Job? = null
+    private var centerAndLocationUpdater: Job? = null
 
     private class FrameBuffer(
         val frame: Bitmap,
@@ -187,6 +243,51 @@ class MapView(
      * [setMapData] ordered by [DISPLAYED_HIGHWAY_TYPES] with the appropriate [Paint] for each [Way]
      */
     private var waysByType = emptyMap<HighwayType, MutableList<Pair<Way, Paint>>>()
+
+    /**
+     * Ignore animation durations until a certain time. This is used to guarantee a smooth animation
+     * even though new calls to [animateToLocation] come in.
+     */
+    private var ignoreAnimationDurationsUntil = 0L
+
+    private data class TouchPointer(
+        val id: Int,
+        val screen: PointF
+    ) {
+        fun toDraggedTouchPointer(mapView: MapView): DraggedTouchPointer {
+            return DraggedTouchPointer(
+                id,
+                mapView.run { this@TouchPointer.screen.toMap().toAbsolute() })
+        }
+    }
+
+    private data class DraggedTouchPointer(
+        val id: Int,
+        var absolute: AbsoluteCoordinates
+    )
+
+    private data class DragState(
+        /** [DraggedTouchPointer] involved in the current drag action. */
+        val pointers: MutableList<DraggedTouchPointer>,
+
+        /**
+         * Is a dragged [center] (not [location]) set?
+         *
+         * @see onTouchEvent
+         * @see dragState
+         */
+        var useDraggedCenter: Boolean,
+
+        /** Once the user does not drag anymore, wait a little and then unset the [useDraggedCenter]. */
+        var draggedCenterTimeout: Job?
+    )
+
+    /**
+     * The state of the current drag.
+     *
+     * @see onTouchEvent
+     */
+    private val dragState = DragState(mutableListOf(), false, null)
 
     /** Callback to receive intermediate locations when [animateToLocation] is used */
     // @MainThread
@@ -349,9 +450,9 @@ class MapView(
             field = min(MAX_FPS, value)
         }
 
-    /** The location to center the map around. This is usually changed via [animateToLocation]. */
+    /** [center] and [location]. Set as pair to keep it in sync. This is usually changed via [animateToLocation]. */
     @VisibleForTesting
-    var center: Location? = null
+    var centerAndLocation: Pair<Location?, Location?> = null to null
         set(value) {
             field = value
 
@@ -360,6 +461,14 @@ class MapView(
 
             requestRenderFrame()
         }
+
+    /** The location to center the map around. */
+    private val center: Location?
+        get() = centerAndLocation.first
+
+    /** The current location of the user. */
+    private val location: Location?
+        get() = centerAndLocation.second
 
     /**
      * Current zoom level as defined in Mercator projection.
@@ -419,6 +528,154 @@ class MapView(
     init {
         setBackgroundColor(styledAttrs.getColor(R.styleable.MapView_mapColor, WHITE))
         updateWayPaints()
+    }
+
+    private val MotionEvent.pointers: List<TouchPointer>
+        get() {
+            return (0 until pointerCount).map { i ->
+                TouchPointer(getPointerId(i), PointF(getX(i), getY(i)))
+            }
+        }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_DOWN -> {
+                event.pointers.filter { pointer -> pointer.id !in dragState.pointers.map { it.id } }
+                    .map { newPointer ->
+                        if (dragState.pointers.size < 2) {
+                            dragState.pointers.add(newPointer.toDraggedTouchPointer(this))
+                        }
+                    }
+
+                dragState.useDraggedCenter = true
+                centerAndLocationUpdater?.cancel()
+                centerAndLocationUpdater = null
+
+                dragState.draggedCenterTimeout?.cancel()
+                dragState.draggedCenterTimeout = null
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val move = dragState.pointers.mapNotNull { dragPointer ->
+                    event.pointers.firstOrNull { it.id == dragPointer.id }?.let { touchPointer ->
+                        dragPointer.absolute to touchPointer.toDraggedTouchPointer(this).absolute
+                    }
+                }
+
+                if (move.isEmpty()) {
+                    // a pointer that is not part of activeDragState moved
+                } else {
+                    val dragStart = move.map { (dragPointer, _) -> dragPointer }
+                    val dragNow = move.map { (_, dragNow) -> dragNow }
+
+                    val dragNowNoScale = if (dragNow.size == 1) {
+                        dragNow
+                    } else {
+                        val centerDrag = AbsoluteCoordinates(
+                            dragNow.averageOf { it.x },
+                            dragNow.averageOf { it.y }
+                        )
+
+                        val dragScale = dragNow[0].distanceTo(dragNow[1]) /
+                                dragStart[0].distanceTo(dragStart[1])
+
+                        // To prevent scaling making sure distance between dragNow-points and
+                        // dragStart-points is the same
+                        dragNow.map { dragNowPoint ->
+                            centerDrag + (dragNowPoint - centerDrag) / dragScale
+                        }
+                    }
+
+                    val dragTransform = Matrix()
+                    dragTransform.setPolyToPoly(
+                        dragNowNoScale.flatMap { it.toFloatList() }.toFloatArray(), 0,
+                        dragStart.flatMap { it.toFloatList() }.toFloatArray(), 0,
+                        dragStart.size
+                    )
+                    assert(dragTransform.isAffine)
+
+                    // Move center so that screen and absolute coordinates will align again. This
+                    // way the screen -> coordinates mapping for the point under the center of the
+                    // tracked pointers never changes. I.e. for a single finger it looks like the
+                    // map is glued to the finger.
+                    val newCenter = centerAbsolute.transform(dragTransform)
+
+                    // To determine bearing change transform a point west of the center (bearing to
+                    // center is 0)
+                    val newWestPoint =
+                        (centerAbsolute - vectorOf(0, 10000)).transform(dragTransform)
+
+                    // Get bearing of the transformed points
+                    val bearingChange = newCenter.toLocation().bearingTo(newWestPoint.toLocation())
+                    val newBearing = canonicalizeBearing(center!!.bearing + bearingChange)
+
+                    animateToLocation(
+                        newCenter.toLocation().toLocation().apply {
+                            bearing = newBearing
+                        }, animate = false,
+                        setCenterInsteadOfLocation = true
+                    )
+                }
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                val numPointersBefore = dragState.pointers.size
+
+                dragState.pointers.retainAll { dragPointer ->
+                    dragPointer.id != event.getPointerId(
+                        event.actionIndex
+                    )
+                }
+
+                if (numPointersBefore == 2 && dragState.pointers.size == 1) {
+                    // When moving from a two point to a single point gesture the map would usually
+                    // jump as the scaling is not ignored anymore. Hence update the dragState's
+                    // absolute coordinates to match the current position, i.e. guarantee that at
+                    // this time there wont be any jump.
+
+                    dragState.pointers.forEach { dragPointer ->
+                        event.pointers.firstOrNull { touchPointer -> touchPointer.id == dragPointer.id }
+                            ?.let { touchPointer ->
+                                dragPointer.absolute = touchPointer.screen.toMap().toAbsolute()
+                            }
+                    }
+                }
+            }
+            MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_UP -> {
+                if (dragState.pointers.isNotEmpty()) {
+                    dragState.pointers.clear()
+
+                    dragState.draggedCenterTimeout?.cancel()
+                    dragState.draggedCenterTimeout =
+                        (context as AppCompatActivity).lifecycleScope.launch(Main.immediate) {
+                            try {
+                                delay(DRAGGED_CENTER_TIMEOUT)
+                            } finally {
+                                if (dragState.pointers.isEmpty()) {
+                                    // Always unset the dragged center if there is no more dragging,
+                                    // even if activity is closed
+                                    dragState.useDraggedCenter = false
+                                }
+                            }
+
+                            ignoreAnimationDurationsUntil =
+                                SystemClock.elapsedRealtime() + ANIMATION_DURATION_AFTER_DRAGGED_CENTER
+                            location?.let { location ->
+                                animateToLocation(
+                                    location,
+                                    forcedBearing = location.bearing,
+                                    animationDuration = ANIMATION_DURATION_AFTER_DRAGGED_CENTER,
+                                    animate = true
+                                )
+                            }
+                        }
+                }
+            }
+        }
+
+        DebugLog.i("Test", "action=${event.actionMasked}, ptrs=${dragState.pointers.map { it.id }}")
+
+
+        return true
     }
 
     private fun updateWayPaints() {
@@ -494,12 +751,17 @@ class MapView(
                 color = getColor(R.styleable.MapView_currentRideColor, YELLOW)
             }
 
-            badSurfaceWayIndicatorColor = getColor(R.styleable.MapView_badSurfaceWayIndicatorColor, BLACK)
-            currentRideIndicatorColor = getColor(R.styleable.MapView_currentRideIndicatorColor, BLACK)
-            defaultWayIndicatorColor =  getColor(R.styleable.MapView_defaultWayIndicatorColor, BLACK)
-            designatedWayIndicatorColor =  getColor(R.styleable.MapView_designatedWayIndicatorColor, BLACK)
-            highTrafficWayIndicatorColor =  getColor(R.styleable.MapView_highTrafficWayIndicatorColor, BLACK)
-            noBicyclesWayIndicatorColor = getColor(R.styleable.MapView_noBicyclesWayIndicatorColor, BLACK)
+            badSurfaceWayIndicatorColor =
+                getColor(R.styleable.MapView_badSurfaceWayIndicatorColor, BLACK)
+            currentRideIndicatorColor =
+                getColor(R.styleable.MapView_currentRideIndicatorColor, BLACK)
+            defaultWayIndicatorColor = getColor(R.styleable.MapView_defaultWayIndicatorColor, BLACK)
+            designatedWayIndicatorColor =
+                getColor(R.styleable.MapView_designatedWayIndicatorColor, BLACK)
+            highTrafficWayIndicatorColor =
+                getColor(R.styleable.MapView_highTrafficWayIndicatorColor, BLACK)
+            noBicyclesWayIndicatorColor =
+                getColor(R.styleable.MapView_noBicyclesWayIndicatorColor, BLACK)
 
             val onewayIndicatorRes =
                 getResourceId(R.styleable.MapView_onewayIndicator, R.drawable.empty)
@@ -513,8 +775,28 @@ class MapView(
                 onewayIndicatorFrequency =
                     getFloat(R.styleable.MapView_onewayIndicatorFrequency, 0.001f).toDouble()
             }
+
+            locationIndicator = styledAttrs.getDrawable(R.styleable.MapView_locationIndicator)
+            locationIndicatorWidth = styledAttrs.getDimensionPixelSize(
+                R.styleable.MapView_locationIndicatorWidth,
+                locationIndicator?.intrinsicWidth ?: 0
+            )
+
+            directionToCurrentIndicator =
+                styledAttrs.getDrawable(R.styleable.MapView_directionToCurrentIndicator)
+            directionToCurrentIndicatorWidth = styledAttrs.getDimensionPixelSize(
+                R.styleable.MapView_directionToCurrentIndicatorWidth,
+                directionToCurrentIndicator?.intrinsicWidth ?: 0
+            )
         }
     }
+
+    /** Set bearing for the direction indicator */
+    var directionToCurrentIndicatorBearing: Float? = null
+        set(value) {
+            field = value
+            requestRenderFrame()
+        }
 
     /**
      * Animate to the new [location] within [animationDuration] ms.
@@ -524,75 +806,118 @@ class MapView(
      * @see maxFps
      */
     fun animateToLocation(
-        location: Location,
+        end: Location,
         forcedBearing: Float? = null,
-        animationDuration: Long = 0
+        animationDuration: Long = 0,
+        animate: Boolean = false,
+        setCenterInsteadOfLocation: Boolean = false
     ) {
-        center?.let { start ->
-            (context as AppCompatActivity).lifecycleScope.launch(Main.immediate) {
-                centerInterpolator?.cancelAndJoin()
+        val adjustedAnimationDuration =
+            max(ignoreAnimationDurationsUntil - SystemClock.elapsedRealtime(), animationDuration)
 
-                val end = location
+        if (animate && location != null && center != null) {
+            // Not supported
+            assert(!setCenterInsteadOfLocation)
 
-                val distance = start.distanceTo(end)
+            data class AnimationSpec(
+                val start: Location,
+                val distance: Float,
+                val startBearing: Float,
+                val rotation: Float
+            ) {
+                fun step(i: Long, total: Long): Location {
+                    return Location("interpolated").apply {
+                        latitude =
+                            start.latitude * (total - i) / total +
+                                    end.latitude * i / total
+                        longitude =
+                            start.longitude * (total - i) / total +
+                                    end.longitude * i / total
+                        bearing = startBearing + rotation * i / total
+                    }
+                }
+            }
 
-                val startBearing = start.bearing
-                val rotation = rotationBetweenBearings(
-                    startBearing, forcedBearing ?: start.bearingTo(end)
+            fun Location.animateTo(end: Location): AnimationSpec {
+                return AnimationSpec(
+                    this,
+                    this.distanceTo(end),
+                    this.bearing,
+                    rotationBetweenBearings(
+                        this.bearing, forcedBearing ?: this.bearingTo(end)
+                    )
                 )
+            }
+
+            val locationAnim = location!!.animateTo(end)
+            val centerAnim = center!!.animateTo(end)
+
+            (context as AppCompatActivity).lifecycleScope.launch(Main.immediate) {
+                centerAndLocationInterpolator?.cancelAndJoin()
 
                 // minFps values empirically determined
-                val minFpsForMovement = distance * 2
-                val minFpsForRotation = abs(rotation * 8)
+                val minFpsForMovement = max(locationAnim.distance * 2, centerAnim.distance * 2)
+                val minFpsForRotation =
+                    max(abs(locationAnim.rotation * 8), abs(centerAnim.rotation * 8))
 
                 val totalFrames = max(
                     1, min(
                         maxFps,
                         ceil(max(minFpsForMovement, minFpsForRotation)).toInt()
-                    ) * animationDuration / 1000
+                    ) * adjustedAnimationDuration / 1000
                 )
 
                 val startTime = SystemClock.elapsedRealtime()
                 // Run centerInterpolator not on main thread. Hence if the main thread is slow,
                 // centerUpdater will not have run, the next time centerInterpolator runs and we
                 // skip a frame
-                centerInterpolator =
+                centerAndLocationInterpolator =
                     launch {
-                        val newLocation = Location("interpolated")
-
                         for (i in 1..totalFrames) {
                             if (isActive) {
                                 val elapsed = SystemClock.elapsedRealtime() - startTime
-                                val desiredElapsed = i * (animationDuration / totalFrames)
+                                val desiredElapsed = i * (adjustedAnimationDuration / totalFrames)
                                 delay(max(0, desiredElapsed - elapsed))
 
-                                if (centerUpdater?.isCompleted == false) {
-                                    centerUpdater?.cancel()
+                                if (centerAndLocationUpdater?.isCompleted == false) {
+                                    centerAndLocationUpdater?.cancel()
                                 }
-                                centerUpdater = launch(Main) {
-                                    center = newLocation.apply {
-                                        latitude =
-                                            start.latitude * (totalFrames - i) / totalFrames +
-                                                    end.latitude * i / totalFrames
-                                        longitude =
-                                            start.longitude * (totalFrames - i) / totalFrames +
-                                                    end.longitude * i / totalFrames
-                                        bearing = startBearing + rotation * i / totalFrames
+                                centerAndLocationUpdater = launch(Main) {
+                                    val newLocation = locationAnim.step(i, totalFrames)
+
+                                    val newCenter = if (!dragState.useDraggedCenter) {
+                                        centerAnim.step(i, totalFrames)
+                                    } else {
+                                        center
                                     }
 
+                                    centerAndLocation = newCenter to newLocation
+
                                     animatedLocationListener.toList().forEach { listener ->
-                                        listener(center!!)
+                                        listener(location!!)
                                     }
                                 }
                             }
                         }
                     }
             }
-        } ?: run {
-            center = location
+        } else {
+            val newLocation = if (!setCenterInsteadOfLocation) {
+                end
+            } else {
+                location
+            }
+
+            val newCenter = if (!dragState.useDraggedCenter || setCenterInsteadOfLocation) {
+                end
+            } else {
+                center
+            }
+
+            centerAndLocation = newCenter to newLocation
 
             animatedLocationListener.toList().forEach { listener ->
-                listener(center!!)
+                listener(location!!)
             }
         }
     }
@@ -664,14 +989,8 @@ class MapView(
         )
 
         for (mapEdge in arrayOf(
-            MapCoordinates(
-                viewPort.centerMap.x - viewRadius,
-                viewPort.centerMap.y - viewRadius
-            ),
-            MapCoordinates(
-                viewPort.centerMap.x + viewRadius,
-                viewPort.centerMap.y + viewRadius
-            )
+            viewPort.centerMap - vectorOf(viewRadius, viewRadius),
+            viewPort.centerMap + vectorOf(viewRadius, viewRadius)
         )) {
             val location = mapEdge.toLocation()
 
@@ -691,20 +1010,20 @@ class MapView(
         )
     }
 
-    private val centerOnScreen: FloatArray
-    get() = floatArrayOf(
-        width / 2f, when {
-            centerFromBottomDim != null -> {
-                height - centerFromBottomDim
+    private val centerOnScreen: PointF
+        get() = PointF(
+            width / 2f, when {
+                centerFromBottomDim != null -> {
+                    height - centerFromBottomDim
+                }
+                centerFromBottomFraction != null -> {
+                    height - (height * centerFromBottomFraction)
+                }
+                else -> {
+                    0f
+                }
             }
-            centerFromBottomFraction != null -> {
-                height - (height * centerFromBottomFraction)
-            }
-            else -> {
-                0f
-            }
-        }
-    )
+        )
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
@@ -748,10 +1067,10 @@ class MapView(
         tiltMatrix.invert(inv)
         inv.mapPoints(screenEdges)
 
-        val centerOnScreenCopy = centerOnScreen.copyOf()
+        val centerOnScreenAsFloatArray = floatArrayOf(centerOnScreen.x, centerOnScreen.y)
 
-        inv.mapPoints(centerOnScreenCopy)
-        val centerViewYOffset = centerOnScreenCopy[1] - screenEdges[1]
+        inv.mapPoints(centerOnScreenAsFloatArray)
+        val centerViewYOffset = centerOnScreenAsFloatArray[1] - screenEdges[1]
 
         viewPort = ViewPort(
             PointF(screenEdges[0], screenEdges[1]),
@@ -777,16 +1096,16 @@ class MapView(
     private fun getTiltAndRotateTransformation(): Matrix {
         val t = Matrix(tiltMatrix)
 
-        // Rotate map around center by center.bearing
+        // Rotate map around center by [center].bearing
         // TODO: Make less ugly, once I understand what is happening
-        center?.let { center ->
+        center?.let {
             t.apply {
                 preTranslate(-viewPort.leftOffset, -viewPort.topOffset)
 
                 preConcat(Matrix().apply {
                     val inv = Matrix().apply {
                         preTranslate(viewPort.centerMap.x, viewPort.centerMap.y)
-                        preRotate(center.bearing)
+                        center?.let { center -> preRotate(center.bearing) }
                         preTranslate(-viewPort.centerMap.x, -viewPort.centerMap.y)
                     }
                     val b = inv.invert(this)
@@ -831,6 +1150,36 @@ class MapView(
         }
     }
 
+    /** Convert screen coordinates to [MapCoordinates] */
+    private fun screenToMapCoordinates(
+        screenCoordinates: Array<PointF>,
+        tiltAndRotate: Matrix
+    ): Array<MapCoordinates> {
+        val screenCoordinatesAsFlatFloat = FloatArray(screenCoordinates.size * 2) { i ->
+            if (i % 2 == 0) {
+                screenCoordinates[i / 2].x
+            } else {
+                screenCoordinates[i / 2].y
+            }
+        }
+
+        val invTiltAndRotate = Matrix()
+        val wasInverted = tiltAndRotate.invert(invTiltAndRotate)
+        assert(wasInverted)
+
+        invTiltAndRotate.mapPoints(screenCoordinatesAsFlatFloat)
+
+        return Array(screenCoordinatesAsFlatFloat.size / 2) { i ->
+            MapCoordinates(
+                screenCoordinatesAsFlatFloat[i * 2],
+                screenCoordinatesAsFlatFloat[i * 2 + 1]
+            )
+        }
+    }
+
+    private fun PointF.toMap(tiltAndRotate: Matrix = getTiltAndRotateTransformation()) =
+        screenToMapCoordinates(arrayOf(this), tiltAndRotate)[0]
+
     @VisibleForTesting
     suspend fun renderFrame() {
         // Copy all view state on the main thread into "input"
@@ -838,12 +1187,13 @@ class MapView(
             val width: Int,
             val height: Int,
             val center: Location?,
+            val location: Location?,
             val clipArea: MapArea?,
             val waysByType: Map<HighwayType, MutableList<Pair<Way, Paint>>>,
             val visibleTrack: TrackAsNodes?,
             val tiltAndRotate: Matrix,
             val currentRidePaint: Paint,
-            val centerAbsolute: AbsoluteCoordinates
+            val centerAbsolute: AbsoluteCoordinates,
         )
 
         val input = withContext(Main.immediate) {
@@ -851,12 +1201,13 @@ class MapView(
                 width,
                 height,
                 center,
+                location,
                 clipArea,
                 waysByType,
                 visibleTrack,
                 getTiltAndRotateTransformation(),
                 currentRidePaint,
-                centerAbsolute
+                centerAbsolute,
             )
         }
 
@@ -865,32 +1216,24 @@ class MapView(
         }
 
         input.center?.let {
-            val tiltAndRotate = input.tiltAndRotate
-            val invTiltAndRotate = Matrix()
-            val wasInverted = tiltAndRotate.invert(invTiltAndRotate)
-            assert(wasInverted)
-
             // Find where in the untransformed map the view would map to.
-            val screenEdges = floatArrayOf(
-                0f, 0f,
-                width.toFloat(), 0f,
-                0f, height.toFloat(),
-                width.toFloat(), height.toFloat()
+            val screenEdges = screenToMapCoordinates(
+                arrayOf(
+                    PointF(0f, 0f),
+                    PointF(width.toFloat(), 0f),
+                    PointF(0f, height.toFloat()),
+                    PointF(width.toFloat(), height.toFloat())
+                ), input.tiltAndRotate
             )
-            invTiltAndRotate.mapPoints(screenEdges)
 
             // First draw ways on untransformed map and the transform the whole map at once. Somehow
             // drawing with a transformed canvas [Canvas.withMatrix] causes artifacts on some
             // devices (E.g. Pixel 3XL on Android Q). This adds 1.8ms (Pixel 4a, suburban map,
             // 1024x1024) and thereby doubles the time spent in [onDrawForeground] though.
-            val minX = minOf(screenEdges[0], screenEdges[2], screenEdges[4], screenEdges[6])
-            val minY = minOf(screenEdges[1], screenEdges[3], screenEdges[5], screenEdges[7])
-            val unTransformedMapWidth = ceil(
-                maxOf(screenEdges[0], screenEdges[2], screenEdges[4], screenEdges[6]) - minX
-            ).toInt()
-            val unTransformedMapHeight = ceil(
-                maxOf(screenEdges[1], screenEdges[3], screenEdges[5], screenEdges[7]) - minY
-            ).toInt()
+            val minX = screenEdges.minOf { it.x }
+            val minY = screenEdges.minOf { it.y }
+            val unTransformedMapWidth = ceil(screenEdges.maxOf { it.x } - minX).toInt()
+            val unTransformedMapHeight = ceil(screenEdges.maxOf { it.y } - minY).toInt()
 
             val unTransformedMap = Bitmap.createBitmap(
                 unTransformedMapWidth,
@@ -902,6 +1245,51 @@ class MapView(
                 // much cheaper
                 fun MapCoordinates.setFromNode(node: Node) {
                     node.toAbsolute(zoom).toMap(this, input.centerAbsolute)
+                }
+
+                fun drawRotatedDrawable(
+                    drawable: Drawable,
+                    locOfCenter: MapCoordinates,
+                    rotation: Float,
+                    widthOnScreen: Int
+                ) {
+                    val leftOnMap = PointF(
+                        centerOnScreen.x - widthOnScreen.toFloat() / 2,
+                        centerOnScreen.y
+                    ).toMap(input.tiltAndRotate)
+
+                    val rightOnMap = PointF(
+                        centerOnScreen.x + widthOnScreen.toFloat() / 2,
+                        centerOnScreen.y
+                    ).toMap(input.tiltAndRotate)
+
+
+                    val widthOnMap = leftOnMap.distanceTo(rightOnMap)
+                    val height =
+                        drawable.intrinsicHeight * widthOnMap / drawable.intrinsicWidth
+
+                    drawable.setBounds(
+                        (locOfCenter.x - minX - widthOnMap / 2).toInt(),
+                        (locOfCenter.y - minY - height / 2).toInt(),
+                        (locOfCenter.x - minX + widthOnMap / 2).toInt(),
+                        (locOfCenter.y - minY + height / 2).toInt()
+                    )
+
+                    val rotate = Matrix().apply {
+                        preTranslate(
+                            locOfCenter.x - minX,
+                            locOfCenter.y - minY
+                        )
+                        preRotate(rotation)
+                        preTranslate(
+                            -(locOfCenter.x - minX),
+                            -(locOfCenter.y - minY)
+                        )
+                    }
+
+                    withMatrix(rotate) {
+                        drawable.draw(this)
+                    }
                 }
 
                 // Cliparea allows to only draw a partial map. Useful when drawing a thumbnail
@@ -941,13 +1329,15 @@ class MapView(
 
                         // Scale to size of way and center around 0,0
                         setBounds(
-                            -(wayPaint.strokeWidth / 2).toInt(), -(wayPaint.strokeWidth / 2).toInt(),
-                            (wayPaint.strokeWidth / 2).toInt(), (wayPaint.strokeWidth / 2).toInt()
+                            -(wayPaint.strokeWidth / 2).toInt(),
+                            -(wayPaint.strokeWidth / 2).toInt(),
+                            (wayPaint.strokeWidth / 2).toInt(),
+                            (wayPaint.strokeWidth / 2).toInt()
                         )
                     }
 
                     val rotateAndMove = Matrix()
-                    val markerOnMap = MapCoordinates(0f,0f)
+                    val markerOnMap = MapCoordinates(0f, 0f)
 
                     way.interpolateAlong(zoom, onewayIndicatorFrequency) { loc, bearing ->
                         loc.toMap(markerOnMap, input.centerAbsolute)
@@ -1043,11 +1433,36 @@ class MapView(
                         indicateAlong(segment, input.currentRidePaint)
                     }
                 }
+
+                input.location?.let { location ->
+                    val mapLocation = location.toBasicLocation().toMap(input.centerAbsolute)
+
+                    locationIndicator?.let { locationIndicator ->
+                        drawRotatedDrawable(
+                            locationIndicator,
+                            mapLocation,
+                            location.bearing,
+                            locationIndicatorWidth
+                        )
+                    }
+
+                    directionToCurrentIndicator?.let { directionToCurrentIndicator ->
+                        directionToCurrentIndicatorBearing?.let { directionToCurrentIndicatorBearing ->
+                            drawRotatedDrawable(
+                                directionToCurrentIndicator,
+                                mapLocation,
+                                (location.bearing) + directionToCurrentIndicatorBearing,
+                                directionToCurrentIndicatorWidth
+                            )
+                        }
+                    }
+                }
             }
 
             // Bitmaps cannot have negative coordinates, hence we drew the image slightly
             // offset; correct for that
-            tiltAndRotate.preTranslate(minX, minY)
+            val tiltAndRotateAndShift = input.tiltAndRotate
+            tiltAndRotateAndShift.preTranslate(minX, minY)
 
             withContext(Main.immediate) {
                 if (lastDrawnFrame != null && lastDrawnFrame != nextFrame) {
@@ -1056,7 +1471,7 @@ class MapView(
                 }
 
                 nextFrame?.recycle()
-                nextFrame = FrameBuffer(unTransformedMap, tiltAndRotate)
+                nextFrame = FrameBuffer(unTransformedMap, tiltAndRotateAndShift)
                 invalidate()
             }
         }
@@ -1120,7 +1535,7 @@ class MapView(
         return toMap(centerAbsolute)
     }
 
-    fun BasicLocation.toMap(center: AbsoluteCoordinates): MapCoordinates {
+    private fun BasicLocation.toMap(center: AbsoluteCoordinates): MapCoordinates {
         return toAbsolute().toMap(center)
     }
 
@@ -1134,6 +1549,57 @@ class MapView(
     ) {
         constructor(x: Int, y: Int) :
                 this(x.toDouble(), y.toDouble())
+
+        constructor(x: Float, y: Float) :
+                this(x.toDouble(), y.toDouble())
+
+        constructor(values: FloatArray) :
+                this(values[0], values[1])
+
+        /** Distance to `other` in pixels on absolute map */
+        fun distanceTo(other: AbsoluteCoordinates): Double {
+            return (this - other).length
+        }
+
+        fun toFloatArray(): FloatArray {
+            return floatArrayOf(x.toFloat(), y.toFloat())
+        }
+
+        fun toFloatList(): List<Float> {
+            return listOf(x.toFloat(), y.toFloat())
+        }
+
+        /**
+         * Move `this` by the vector `a`.
+         */
+        operator fun plus(a: Vector): AbsoluteCoordinates {
+            assert(a.isValid())
+            return AbsoluteCoordinates(x + a.x, y + a.y)
+        }
+
+        /**
+         * Move `this` by the inverse of the vector `a`.
+         */
+        operator fun minus(a: Vector): AbsoluteCoordinates {
+            assert(a.isValid())
+            return AbsoluteCoordinates(x - a.x, y - a.y)
+        }
+
+        /**
+         * Get vector between `this` and `a`.
+         */
+        operator fun minus(a: AbsoluteCoordinates): Vector {
+            return doubleArrayOf(x - a.x, y - a.y)
+        }
+
+        /**
+         * Project `this` by `m`
+         */
+        fun transform(m: Matrix): AbsoluteCoordinates {
+            val dst = FloatArray(2)
+            m.mapPoints(dst, this.toFloatArray())
+            return AbsoluteCoordinates(dst)
+        }
     }
 
     @VisibleForTesting
@@ -1153,10 +1619,7 @@ class MapView(
     }
 
     private fun AbsoluteCoordinates.toMap(center: AbsoluteCoordinates): MapCoordinates {
-        return MapCoordinates(
-            (x - center.x).toFloat() + viewPort.centerMap.x,
-            (y - center.y).toFloat() + viewPort.centerMap.y
-        )
+        return viewPort.centerMap + (this - center)
     }
 
     private fun AbsoluteCoordinates.toMap(mapCoord: MapCoordinates, center: AbsoluteCoordinates) {
@@ -1168,13 +1631,28 @@ class MapView(
     class MapCoordinates(x: Float, y: Float) : PointF(x, y) {
         constructor(x: Double, y: Double) :
                 this(x.toFloat(), y.toFloat())
+
+        fun distanceTo(other: MapCoordinates): Double {
+            return (this - other).length
+        }
+
+        operator fun minus(a: MapCoordinates): Vector {
+            return vectorOf(x - a.x, y - a.y)
+        }
+
+        operator fun minus(a: Vector): MapCoordinates {
+            assert(a.isValid())
+            return MapCoordinates(x - a.x, y - a.y)
+        }
+
+        operator fun plus(a: Vector): MapCoordinates {
+            assert(a.isValid())
+            return MapCoordinates(x + a.x, y + a.y)
+        }
     }
 
     private fun MapCoordinates.toAbsolute(): AbsoluteCoordinates {
-        return AbsoluteCoordinates(
-            x + centerAbsolute.x - viewPort.centerMap.x,
-            y + centerAbsolute.y - viewPort.centerMap.y
-        )
+        return centerAbsolute + (this - viewPort.centerMap)
     }
 
     /** Get the [BasicLocation] of a point on the map */

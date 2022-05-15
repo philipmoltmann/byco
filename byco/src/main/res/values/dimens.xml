@@ -19,6 +19,7 @@
     <dimen name="xLargeText">28sp</dimen>
     <dimen name="largeText">22sp</dimen>
     <dimen name="smallText">16sp</dimen>
+    <dimen name="verySmallText">12sp</dimen>
     <dimen name="largeTextFixed">22dp</dimen>
     <dimen name="smallTextFixed">16dp</dimen>
     <dimen name="buttonWidth">48dp</dimen>

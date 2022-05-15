@@ -25,6 +25,11 @@
         <!-- Center of map from bottom -->
         <attr name="centerFromBottom" format="dimension|fraction" />
 
+        <attr name="locationIndicator" format="reference" />
+        <attr name="locationIndicatorWidth" format="dimension" />
+        <attr name="directionToCurrentIndicator" format="reference" />
+        <attr name="directionToCurrentIndicatorWidth" format="dimension" />
+
         <!-- dp at 18 zoom level -->
         <attr name="motorWayWidth" format="float" />
         <!-- dp at 18 zoom level -->

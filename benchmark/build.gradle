@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    compileSdk 31
+    compileSdk target_sdk
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -17,16 +17,14 @@ android {
     }
 
     defaultConfig {
+        testInstrumentationRunnerArguments enable: 'true', suppressErrors: 'DEBUGGABLE', mode: 'sampled'
         minSdk 23
-        targetSdk 31
+        targetSdk target_sdk
 
         testInstrumentationRunner 'androidx.benchmark.junit4.AndroidBenchmarkRunner'
 
-        testInstrumentationRunnerArgument 'androidx.benchmark.output.enable', 'true'
-        testInstrumentationRunnerArgument 'androidx.benchmark.suppressErrors', 'DEBUGGABLE'
 
         // Enable method sampling
-        testInstrumentationRunnerArgument 'androidx.benchmark.profiling.mode', 'sampled'
     }
 
     testBuildType = "release"
@@ -41,6 +39,7 @@ android {
             isDefault = true
         }
     }
+    namespace 'androidapp.byco.benchmark'
 }
 
 dependencies {

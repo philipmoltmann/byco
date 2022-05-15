@@ -88,9 +88,13 @@
 
     <string name="about">Über Byco</string>
     <string name="close">Schließen</string>
-    <string name="licenses">Lizenzen</string>
+    <string name="licenses">Lizenzen:\ </string>
+    <string name="app_license">App,\ </string>
+    <string name="dependencies_license">Dependencies</string>
     <string name="cannot_find_licenses">Kann Lizenzen nicht finden</string>
     <string name="privacy_link">Datenschutzerklärung</string>
+
+    <string name="app_license_activity_title">App Lizenz</string>
 
     <string name="save_to_file">Datei speichern</string>
     <string name="save_to_file_message">Speichere %s als Datei</string>
