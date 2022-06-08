@@ -12,8 +12,8 @@ android {
         applicationId "androidapp.byco"
         minSdk 23
         targetSdk target_sdk
-        versionCode 46
-        versionName "2.1.9"
+        versionCode 49
+        versionName "2.1.11"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }

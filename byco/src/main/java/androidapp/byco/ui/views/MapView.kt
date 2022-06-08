@@ -495,11 +495,7 @@ class MapView(
 
     /** Update [center] */
     private fun updateCenter() {
-        centerAbsolute = if (center == null) {
-            AbsoluteCoordinates(0, 0)
-        } else {
-            center!!.toAbsolute()
-        }
+        centerAbsolute = center?.toAbsolute() ?: AbsoluteCoordinates(0, 0)
     }
 
     /**
@@ -539,6 +535,8 @@ class MapView(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        center ?: return false
+
         when (event.actionMasked) {
             MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_DOWN -> {
                 event.pointers.filter { pointer -> pointer.id !in dragState.pointers.map { it.id } }
@@ -607,7 +605,7 @@ class MapView(
 
                     // Get bearing of the transformed points
                     val bearingChange = newCenter.toLocation().bearingTo(newWestPoint.toLocation())
-                    val newBearing = canonicalizeBearing(center!!.bearing + bearingChange)
+                    val newBearing = canonicalizeBearing((center?.bearing ?: 0f) + bearingChange)
 
                     animateToLocation(
                         newCenter.toLocation().toLocation().apply {
@@ -671,9 +669,6 @@ class MapView(
                 }
             }
         }
-
-        DebugLog.i("Test", "action=${event.actionMasked}, ptrs=${dragState.pointers.map { it.id }}")
-
 
         return true
     }
