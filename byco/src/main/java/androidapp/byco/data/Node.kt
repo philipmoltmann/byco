@@ -37,7 +37,7 @@ private val lastUsedGeneratedNodeId = AtomicLong(0)
  */
 open class Node(
     /** Unique OSM-ID of the [Node] */
-    @VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)
+    @get:VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)
     val id: Long = lastUsedGeneratedNodeId.decrementAndGet(),
 
     latitude: Double,
@@ -46,7 +46,7 @@ open class Node(
     /**
      * RW version of [ways]
      */
-    @VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)
+    @get:VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)
     val mutableWays: MutableSet<Way> = ArraySet(),
     val ways: Set<Way> = mutableWays
 ) : BasicLocation(latitude, longitude) {

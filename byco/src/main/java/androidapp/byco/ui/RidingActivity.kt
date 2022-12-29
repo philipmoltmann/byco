@@ -85,8 +85,8 @@ class RidingActivity : AppCompatActivity() {
                 private var lastLocationUpdate = Long.MIN_VALUE
                 private var lastLocation: Location? = null
 
-                override fun onChanged(v: Triple<Location?, Float?, Boolean?>) {
-                    val (currentLocation, smoothedBearing, isMoving) = v
+                override fun onChanged(value: Triple<Location?, Float?, Boolean?>) {
+                    val (currentLocation, smoothedBearing, isMoving) = value
 
                     currentLocation ?: return
 
@@ -216,10 +216,10 @@ class RidingActivity : AppCompatActivity() {
             object : Observer<Pair<CountryCode, MapData?>> {
                 private var setMapDataJob: Job? = null
 
-                override fun onChanged(newData: Pair<CountryCode, MapData?>) {
+                override fun onChanged(value: Pair<CountryCode, MapData?>) {
                     setMapDataJob?.cancel()
 
-                    val (countryCode, mapData) = newData
+                    val (countryCode, mapData) = value
 
                     if (mapData != null) {
                         setMapDataJob = lifecycle.coroutineScope.launch {

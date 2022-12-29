@@ -19,9 +19,10 @@ package androidapp.byco.util
 import android.content.Context
 import android.location.Geocoder
 import android.location.Location
-import android.os.Build
 import androidapp.byco.data.OsmDataProvider.HighwayType
 import androidapp.byco.data.OsmDataProvider.HighwayType.*
+import androidapp.byco.util.compat.getFromLocationCompat
+import androidx.core.os.ConfigurationCompat
 
 /**
  * Country code according to ISO 3166 (or null if there is no country)
@@ -36,18 +37,15 @@ private var lastCountryCode: CountryCode = null
 /**
  * Get country code for given location
  */
-fun getCountryCode(
+suspend fun getCountryCode(
     context: Context,
     location: Location?,
     isCurrentLocation: Boolean = true
 ): CountryCode {
     if (Geocoder.isPresent() && location != null) {
         return try {
-            Geocoder(context).getFromLocation(
-                location.latitude,
-                location.longitude,
-                1
-            )?.get(0)?.countryCode
+            Geocoder(context).getFromLocationCompat(location.latitude, location.longitude, 1)
+                ?.get(0)?.countryCode
                 .also {
                     if (isCurrentLocation) {
                         lastCountryCode = it
@@ -63,13 +61,12 @@ fun getCountryCode(
             null
         }
     } else {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            context.resources.configuration.locales[0].country
-        } else {
-            @Suppress("DEPRECATION")
-            context.resources.configuration.locale.country
-        }
+        return getCountryCodeFromLocale(context)
     }
+}
+
+fun getCountryCodeFromLocale(context: Context): String {
+    return ConfigurationCompat.getLocales(context.resources.configuration)[0]!!.country
 }
 
 /**

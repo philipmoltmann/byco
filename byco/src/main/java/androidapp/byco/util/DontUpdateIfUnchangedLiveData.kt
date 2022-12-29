@@ -29,21 +29,3 @@ open class DontUpdateIfUnchangedLiveData<T> : MutableLiveData<T>() {
         }
     }
 }
-
-/**
- * Wrap a [MutableLiveData] in a [DontUpdateIfUnchangedLiveData]. The wrapper has no own state and
- * just modifies and returns the wrapped state.
- */
-fun <T> MutableLiveData<T>.dontUpdateIfUnchanged(): DontUpdateIfUnchangedLiveData<T> {
-    return object : DontUpdateIfUnchangedLiveData<T>() {
-        override fun setValue(newValue: T?) {
-            if (newValue != this@dontUpdateIfUnchanged.value) {
-                this@dontUpdateIfUnchanged.value = newValue
-            }
-        }
-
-        override fun getValue(): T? {
-            return this@dontUpdateIfUnchanged.value
-        }
-    }
-}

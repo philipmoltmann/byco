@@ -18,6 +18,7 @@ package androidapp.byco.ui
 
 import android.os.Bundle
 import androidapp.byco.lib.databinding.AboutActivityBinding
+import androidapp.byco.util.compat.getPackageInfoCompat
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -38,7 +39,7 @@ class AboutActivity : AppCompatActivity() {
         binding = AboutActivityBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.version.text = packageManager.getPackageInfo(packageName, 0).versionName
+        binding.version.text = packageManager.getPackageInfoCompat(packageName, 0).versionName
         binding.appIcon.clipToOutline = true
 
         binding.close.setOnClickListener { viewModel.close(this) }

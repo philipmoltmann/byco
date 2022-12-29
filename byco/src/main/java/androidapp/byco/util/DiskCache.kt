@@ -16,7 +16,8 @@
 
 package androidapp.byco.util
 
-import android.os.FileObserver
+import android.os.FileObserver.*
+import androidapp.byco.util.compat.createFileObserverCompat
 import androidx.annotation.GuardedBy
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.LiveData
@@ -178,14 +179,10 @@ class DiskCache<K, V>(
      * guarantee, but very likely.
      */
     fun hasData(key: K) = object : AsyncLiveData<Boolean>(dispatcher = IO) {
-        // Support API23
-        @Suppress("DEPRECATION")
         private val directoryObserver =
-            object : FileObserver(location.absolutePath) {
-                override fun onEvent(event: Int, path: String?) {
-                    if (event in setOf(CLOSE_WRITE, MOVED_TO, MOVED_FROM, DELETE)) {
-                        requestUpdate()
-                    }
+            createFileObserverCompat(location) { event: Int, _: String? ->
+                if (event in setOf(CLOSE_WRITE, MOVED_TO, MOVED_FROM, DELETE)) {
+                    requestUpdate()
                 }
             }
 

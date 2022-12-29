@@ -20,15 +20,18 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import androidapp.byco.lib.R
 import androidapp.byco.lib.databinding.SaveToFileActivityBinding
+import androidapp.byco.util.compat.getParcelableExtraCompat
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import lib.gpx.DebugLog
+import lib.gpx.GPX_MIME_TYPE
 
 /**
  * Share action Receiver to store a file to disk. Not sure why there is no default target for this.
@@ -49,15 +52,23 @@ class SaveToFileActivity : AppCompatActivity() {
         binding.saveToFileMsg.text = getString(R.string.save_to_file_message, fileName)
 
         val selectFileLauncher =
-            registerForActivityResult(ActivityResultContracts.CreateDocument()) { uri ->
+            registerForActivityResult(ActivityResultContracts.CreateDocument(GPX_MIME_TYPE)) { uri ->
                 uri?.let {
                     lifecycleScope.launch(Dispatchers.IO) {
                         try {
-                            contentResolver.openOutputStream(uri)!!.buffered().use { out ->
-                                contentResolver.openInputStream(
-                                    intent.getParcelableExtra(Intent.EXTRA_STREAM)!!
-                                )!!.buffered().use { ins ->
-                                    ins.copyTo(out)
+                            contentResolver.openOutputStream(uri)!!.use { out ->
+                                out.buffered().use { outBuffered ->
+                                    contentResolver.openInputStream(
+                                        intent.getParcelableExtraCompat(
+                                            Intent.EXTRA_STREAM,
+                                            Uri::class.java
+                                        )!!
+                                    )!!.use { ins ->
+                                        ins
+                                            .buffered().use { insBuffered ->
+                                                insBuffered.copyTo(outBuffered)
+                                            }
+                                    }
                                 }
                             }
                         } catch (e: Exception) {

@@ -22,7 +22,6 @@ import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Bitmap
-import android.os.Build
 import androidapp.byco.FILE_PROVIDER_AUTHORITY
 import androidapp.byco.SHARE_DIRECTORY
 import androidapp.byco.data.PreviousRide
@@ -31,6 +30,7 @@ import androidapp.byco.data.ThumbnailRepository
 import androidapp.byco.data.writePreviousRide
 import androidapp.byco.lib.R
 import androidapp.byco.util.addSources
+import androidapp.byco.util.compat.putExcludeComponentsExtraCompat
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -154,15 +154,14 @@ class ShareRideActivityViewModel(
                                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 .putExtra(SaveToFileActivity.EXTRA_FILE_NAME, gpxToShare.name),
                             null
-                        ).apply {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                                // Prevent sending back to the this app
-                                putExtra(
-                                    Intent.EXTRA_EXCLUDE_COMPONENTS,
-                                    arrayOf(ComponentName(app, AddRideActivity::class.java))
+                        ).putExcludeComponentsExtraCompat(
+                            arrayOf(
+                                ComponentName(
+                                    app,
+                                    AddRideActivity::class.java
                                 )
-                            }
-                        }
+                            )
+                        )
                     )
                 } catch (e: ActivityNotFoundException) {
                     DebugLog.e(TAG, "Cannot share $ride", e)

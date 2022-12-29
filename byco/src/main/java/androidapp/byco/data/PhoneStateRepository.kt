@@ -22,14 +22,26 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.ConnectivityManager
-import android.net.wifi.WifiManager
+import android.net.ConnectivityManager.NetworkCallback
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkCapabilities.*
+import android.net.NetworkRequest
 import androidapp.byco.data.PhoneStateRepository.NetworkType.*
+import androidapp.byco.util.AsyncLiveData
 import androidapp.byco.util.SingleParameterSingletonOf
 import androidx.lifecycle.LiveData
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import java.util.*
+import java.util.concurrent.TimeUnit.SECONDS
 
 /** Not riding related phone state */
-class PhoneStateRepository private constructor(private val app: Application) {
+class PhoneStateRepository private constructor(
+    private val app: Application,
+    private val CONNECTION_CHECK_RETRY_DELAY: Long = SECONDS.toMillis(3)
+) {
     enum class NetworkType {
         UNMETERED,
         METERED,
@@ -37,16 +49,28 @@ class PhoneStateRepository private constructor(private val app: Application) {
     }
 
     /** Currently connected [NetworkType] */
-    val networkType = object : LiveData<NetworkType>() {
-        private val networkStateChangeIntent = IntentFilter().apply {
-            addAction(ConnectivityManager.CONNECTIVITY_ACTION)
-            addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
-            addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
-        }
+    val networkType = object : AsyncLiveData<NetworkType>() {
+        private val cm = app.getSystemService(ConnectivityManager::class.java)
+        private var networkCheckRetryDelay = CONNECTION_CHECK_RETRY_DELAY
 
-        private val networkStateChangeReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                update()
+        private val networkCallback = object : NetworkCallback() {
+            override fun onUnavailable() {
+                requestUpdate()
+            }
+
+            override fun onAvailable(network: Network) {
+                requestUpdate()
+            }
+
+            override fun onCapabilitiesChanged(
+                network: Network,
+                networkCapabilities: NetworkCapabilities
+            ) {
+                requestUpdate()
+            }
+
+            override fun onLost(network: Network) {
+                requestUpdate()
             }
         }
 
@@ -57,29 +81,56 @@ class PhoneStateRepository private constructor(private val app: Application) {
         override fun onActive() {
             super.onActive()
 
-            app.registerReceiver(networkStateChangeReceiver, networkStateChangeIntent)
-            update()
+            cm.registerNetworkCallback(NetworkRequest.Builder().build(), networkCallback)
+            requestUpdate()
         }
 
         override fun onInactive() {
             super.onInactive()
 
-            app.unregisterReceiver(networkStateChangeReceiver)
+            cm.unregisterNetworkCallback(networkCallback)
         }
 
-        private fun update() {
-            val cm = app.getSystemService(ConnectivityManager::class.java)
+        override suspend fun update(): NetworkType? {
+            val activeNetwork = cm.activeNetwork
+            val activeNetworkCapabilities = cm.getNetworkCapabilities(activeNetwork)
 
-            value = when {
-                cm.activeNetworkInfo?.isConnected != true -> {
+            val networkType = when {
+                activeNetworkCapabilities == null
+                        || !activeNetworkCapabilities.hasCapability(NET_CAPABILITY_INTERNET)
+                        || activeNetworkCapabilities.hasCapability(NET_CAPABILITY_CAPTIVE_PORTAL) -> {
                     NO_NETWORK
                 }
-                cm.isActiveNetworkMetered -> {
+                activeNetworkCapabilities.hasCapability(NET_CAPABILITY_NOT_METERED)
+                        && activeNetworkCapabilities.hasCapability(NET_CAPABILITY_NOT_RESTRICTED) ->
+                    UNMETERED
+                else -> {
                     METERED
                 }
-                else -> {
-                    UNMETERED
+            }
+
+            // When turning off wifi and hence switching to cell the active network becomes null but
+            // there is no further callback. Hence we never realize that the active network changed
+            // and never re-evaluate the connectivity. Hence force a periodic network check while
+            // the network is not active.
+            if (activeNetwork == null) {
+                liveDataScope.launch {
+                    delay(networkCheckRetryDelay)
+
+                    // Keep checking more slowly if previous checks failed.
+                    networkCheckRetryDelay *= 2
+                    ensureActive()
+
+                    requestUpdate()
                 }
+            } else {
+                networkCheckRetryDelay = CONNECTION_CHECK_RETRY_DELAY
+            }
+
+            return if (networkType == value) {
+                null
+            } else {
+                networkType
             }
         }
     }

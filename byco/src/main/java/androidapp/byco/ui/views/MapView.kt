@@ -48,8 +48,8 @@ import lib.gpx.BasicLocation
 import lib.gpx.DebugLog
 import lib.gpx.MapArea
 import lib.gpx.toBasicLocation
-import java.math.BigDecimal
 import java.math.BigDecimal.ZERO
+import java.math.RoundingMode.*
 import kotlin.coroutines.coroutineContext
 import kotlin.math.*
 
@@ -998,10 +998,10 @@ class MapView(
         val scale = MapDataRepository.TILE_SCALE
 
         return MapArea(
-            minLat.toBigDecimal().setScale(scale, BigDecimal.ROUND_FLOOR),
-            minLon.toBigDecimal().setScale(scale, BigDecimal.ROUND_FLOOR),
-            maxLat.toBigDecimal().setScale(scale, BigDecimal.ROUND_CEILING),
-            maxLon.toBigDecimal().setScale(scale, BigDecimal.ROUND_CEILING)
+            minLat.toBigDecimal().setScale(scale, FLOOR),
+            minLon.toBigDecimal().setScale(scale, FLOOR),
+            maxLat.toBigDecimal().setScale(scale, CEILING),
+            maxLon.toBigDecimal().setScale(scale, CEILING)
         )
     }
 

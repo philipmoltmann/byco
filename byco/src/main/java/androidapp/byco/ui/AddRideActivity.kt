@@ -17,9 +17,11 @@
 package androidapp.byco.ui
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidapp.byco.lib.R
+import androidapp.byco.util.compat.getParcelableExtraCompat
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.coroutineScope
@@ -39,8 +41,12 @@ class AddRideActivity : AppCompatActivity() {
         setContentView(R.layout.add_ride_activity)
 
         if (savedInstanceState == null && intent.action == Intent.ACTION_SEND) {
-            val src =
-                contentResolver.openInputStream(intent.getParcelableExtra(Intent.EXTRA_STREAM)!!)!!
+            val src = contentResolver.openInputStream(
+                intent.getParcelableExtraCompat(
+                    Intent.EXTRA_STREAM,
+                    Uri::class.java
+                )!!
+            )!!
 
             lifecycle.coroutineScope.launch(IO) {
                 try {

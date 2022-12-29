@@ -18,7 +18,6 @@ package androidapp.byco.ui.views
 
 import android.content.Context
 import android.graphics.Rect
-import android.os.Build
 import android.util.AttributeSet
 import android.view.WindowInsets
 import android.widget.FrameLayout
@@ -26,6 +25,7 @@ import androidapp.byco.lib.R
 import androidapp.byco.ui.views.NotchSafeFrameLayout.AddPadding.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.res.getIntOrThrow
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.coroutineScope
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.launch
@@ -139,9 +139,8 @@ class NotchSafeFrameLayout(
     }
 
     override fun onApplyWindowInsets(insets: WindowInsets?): WindowInsets {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            this.cutouts = insets?.displayCutout?.boundingRects
-        }
+        this.cutouts =
+            insets?.let { WindowInsetsCompat.toWindowInsetsCompat(it).displayCutout?.boundingRects }
 
         return super.onApplyWindowInsets(insets)
     }

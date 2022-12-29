@@ -23,7 +23,6 @@ import android.content.ComponentName
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.location.Location
-import android.os.Build
 import android.util.Log
 import androidapp.byco.FixedLowPriorityThreads
 import androidapp.byco.JobIds.PREFETCHER
@@ -31,6 +30,8 @@ import androidapp.byco.background.Prefetcher.ProcessPriority.*
 import androidapp.byco.data.*
 import androidapp.byco.data.PhoneStateRepository.NetworkType
 import androidapp.byco.data.PhoneStateRepository.NetworkType.*
+import androidapp.byco.ui.views.setRequiresBatteryNotLowCompat
+import androidapp.byco.ui.views.setRequiresStorageNotLowCompat
 import androidapp.byco.util.*
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.Observer
@@ -91,12 +92,8 @@ class Prefetcher(
                         PREFETCHER.ordinal,
                         ComponentName(app, PrefetcherJobService::class.java)
                     ).setRequiredNetworkType(JobInfo.NETWORK_TYPE_UNMETERED)
-                        .apply {
-                            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.O) {
-                                setRequiresBatteryNotLow(true)
-                                setRequiresStorageNotLow(true)
-                            }
-                        }
+                        .setRequiresBatteryNotLowCompat(true)
+                        .setRequiresStorageNotLowCompat(true)
                         .build()
                 )
             }

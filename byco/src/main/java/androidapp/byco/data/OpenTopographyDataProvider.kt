@@ -20,6 +20,7 @@ import android.app.Application
 import android.content.pm.PackageManager
 import android.util.Log
 import androidapp.byco.util.SingleParameterSingletonOf
+import androidapp.byco.util.compat.getApplicationInfoCompat
 import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers.Default
@@ -54,7 +55,7 @@ class OpenTopographyDataProvider private constructor(private val app: Applicatio
         maxLon: BigDecimal
     ): String {
         return "$DATA_SOURCE/globaldem?demtype=NASADEM&south=$minLat&north=$maxLat&west=$minLon" +
-                "&east=$maxLon&outputFormat=AAIGrid&API_Key=${app.packageManager.getApplicationInfo(app.packageName, PackageManager.GET_META_DATA).metaData.getString("otk")!!.reversed()}"
+                "&east=$maxLon&outputFormat=AAIGrid&API_Key=${app.packageManager.getApplicationInfoCompat(app.packageName, PackageManager.GET_META_DATA).metaData.getString("otk")!!.reversed()}"
     }
 
     /** Get raw OpenTopography data for a certain area. */

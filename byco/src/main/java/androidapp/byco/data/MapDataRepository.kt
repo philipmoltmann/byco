@@ -39,7 +39,7 @@ import java.io.File
 import java.io.IOException
 import java.math.BigDecimal
 import java.math.BigDecimal.*
-import java.math.RoundingMode
+import java.math.RoundingMode.*
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -231,10 +231,8 @@ class MapDataRepository private constructor(
         center: BasicLocation,
         maxDistance: Float,  // m
     ) {
-        val centerLat =
-            BigDecimal(center.latitude).setScale(TILE_SCALE, RoundingMode.HALF_UP)
-        val centerLon =
-            BigDecimal(center.longitude).setScale(TILE_SCALE, RoundingMode.HALF_UP)
+        val centerLat = BigDecimal(center.latitude).setScale(TILE_SCALE, HALF_UP)
+        val centerLon = BigDecimal(center.longitude).setScale(TILE_SCALE, HALF_UP)
 
         var distanceDeg = ZERO
         while (center.distanceTo(
@@ -407,8 +405,8 @@ class MapDataRepository private constructor(
         init {
             assert(mapArea.minLat < mapArea.maxLat)
             assert(mapArea.minLon < mapArea.maxLon)
-            assert(mapArea.minLat.setScale(TILE_SCALE, ROUND_HALF_UP) == mapArea.minLat)
-            assert(mapArea.minLon.setScale(TILE_SCALE, ROUND_HALF_UP) == mapArea.minLon)
+            assert(mapArea.minLat.setScale(TILE_SCALE, HALF_UP) == mapArea.minLat)
+            assert(mapArea.minLon.setScale(TILE_SCALE, HALF_UP) == mapArea.minLon)
         }
 
         override fun onActive() {

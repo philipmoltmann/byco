@@ -1,9 +1,0 @@
-<component name="CopyrightManager">
-  <settings>
-    <module2copyright>
-      <element module="byco" copyright="Apache 2.0" />
-      <element module="gpxlib" copyright="Apache 2.0" />
-      <element module="app" copyright="Apache 2.0" />
-    </module2copyright>
-  </settings>
-</component>

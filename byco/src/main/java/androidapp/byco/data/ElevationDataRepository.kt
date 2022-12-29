@@ -16,6 +16,7 @@
 
 package androidapp.byco.data
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.util.Log
 import androidapp.byco.ui.views.ElevationView
@@ -35,7 +36,7 @@ import java.io.File
 import java.io.IOException
 import java.math.BigDecimal
 import java.math.BigDecimal.*
-import java.math.RoundingMode
+import java.math.RoundingMode.*
 import java.util.concurrent.TimeUnit.DAYS
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.zip.ZipInputStream
@@ -159,9 +160,10 @@ class ElevationDataRepository private constructor(
     }
 
     fun getElevationData(mapArea: MapArea) = object : AsyncLiveData<ElevationData>() {
+        @SuppressLint("AssertionSideEffect")
         override suspend fun update(): ElevationData? {
-            assert(mapArea.minLat.setScale(TILE_SCALE, ROUND_HALF_UP) == mapArea.minLat)
-            assert(mapArea.minLon.setScale(TILE_SCALE, ROUND_HALF_UP) == mapArea.minLon)
+            assert(mapArea.minLat.setScale(TILE_SCALE, HALF_UP) == mapArea.minLat)
+            assert(mapArea.minLon.setScale(TILE_SCALE, HALF_UP) == mapArea.minLon)
 
             return mapBigDecimal(mapArea.minLat, mapArea.maxLat, TILE_WIDTH) { lat ->
                 mapBigDecimal(mapArea.minLon, mapArea.maxLon, TILE_WIDTH) { lon ->
@@ -207,10 +209,8 @@ class ElevationDataRepository private constructor(
         center: BasicLocation,
         maxDistance: Float,  // m
     ) {
-        val centerLat =
-            BigDecimal(center.latitude).setScale(TILE_SCALE, RoundingMode.HALF_UP)
-        val centerLon =
-            BigDecimal(center.longitude).setScale(TILE_SCALE, RoundingMode.HALF_UP)
+        val centerLat = BigDecimal(center.latitude).setScale(TILE_SCALE, HALF_UP)
+        val centerLon = BigDecimal(center.longitude).setScale(TILE_SCALE, HALF_UP)
 
         var distanceDeg = ZERO
         var tilesFetched = 0
@@ -282,10 +282,10 @@ class ElevationDataRepository private constructor(
                             val newElevationArea = MapArea(
                                 // Rounding should be unnecessary, but floating point errors might have
                                 // happened
-                                BigDecimal(minLat).setScale(scale, RoundingMode.HALF_UP),
-                                BigDecimal(minLon).setScale(scale, RoundingMode.HALF_UP),
-                                BigDecimal(maxLat).setScale(scale, RoundingMode.HALF_UP),
-                                BigDecimal(maxLon).setScale(scale, RoundingMode.HALF_UP)
+                                BigDecimal(minLat).setScale(scale, HALF_UP),
+                                BigDecimal(minLon).setScale(scale, HALF_UP),
+                                BigDecimal(maxLat).setScale(scale, HALF_UP),
+                                BigDecimal(maxLon).setScale(scale, HALF_UP)
                             )
 
                             elevationData = ElevationDataRepository[app]
@@ -619,8 +619,6 @@ private class Climb(
         assert(length >= 0)
         assert(abs(elevations[startIdx + size].progress - elevations[startIdx].progress) == length)
     }
-
-    val indices = 0 until size
 
     operator fun get(i: Int): ElevationProfileNode {
         return elevations[i + startIdx]

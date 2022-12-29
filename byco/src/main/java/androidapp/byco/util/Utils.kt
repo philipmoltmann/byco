@@ -16,7 +16,6 @@
 
 package androidapp.byco.util
 
-import android.content.ContentValues
 import android.content.Context
 import android.content.res.Configuration
 import android.view.View
@@ -231,7 +230,7 @@ fun canonicalizeBearing(bearing: Float): Float {
 /**
  * Add multiple sources.
  */
-fun MediatorLiveData<*>.addSources(vararg sources: LiveData<*>, onChanged: Observer<Any>) {
+fun MediatorLiveData<*>.addSources(vararg sources: LiveData<*>, onChanged: Observer<Any?>) {
     sources.forEach {
         addSource(it, onChanged)
     }

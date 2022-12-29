@@ -26,8 +26,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.location.Location
-import android.os.Build
-import android.os.FileObserver
+import android.os.FileObserver.*
 import android.view.LayoutInflater
 import android.view.View
 import androidapp.byco.THUMBNAILS_DIRECTORY
@@ -36,6 +35,8 @@ import androidapp.byco.ui.views.MapView
 import androidapp.byco.util.AsyncLiveData
 import androidapp.byco.util.CountryCode
 import androidapp.byco.util.SingleParameterSingletonOf
+import androidapp.byco.util.compat.WEBP_COMPAT
+import androidapp.byco.util.compat.createFileObserverCompat
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.Observer
 import kotlinx.coroutines.Dispatchers.IO
@@ -173,16 +174,7 @@ class ThumbnailRepository private constructor(
         isDarkMode: Boolean,
     ) {
         val tmp = File(app.cacheDir, "tmp.png")
-        tmp.outputStream().buffered().use { out ->
-            thumbnail.compress(
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    Bitmap.CompressFormat.WEBP_LOSSY
-                } else {
-                    @Suppress("DEPRECATION")
-                    Bitmap.CompressFormat.WEBP
-                }, 90, out
-            )
-        }
+        tmp.outputStream().buffered().use { out -> thumbnail.compress(WEBP_COMPAT, 90, out) }
         tmp.renameTo(getThumbnailFileFor(ride, isDarkMode))
 
         // File observers are unreliable, hence call the live datas manually
@@ -211,21 +203,16 @@ class ThumbnailRepository private constructor(
 
     private inner class HasThumbnailLiveData(val ride: PreviousRide, val isDarkMode: Boolean) :
         LiveData<Boolean>() {
-        // Support API23
-        @Suppress("DEPRECATION")
-        private val directoryObserver =
-            object : FileObserver(
-                getThumbnailFileFor(
-                    ride,
-                    isDarkMode
-                ).parentFile!!.absolutePath
-            ) {
-                override fun onEvent(event: Int, path: String?) {
-                    if (event in setOf(CLOSE_WRITE, MOVED_TO, MOVED_FROM, DELETE)) {
-                        update()
-                    }
-                }
+        private val directoryObserver = createFileObserverCompat(
+            getThumbnailFileFor(
+                ride,
+                isDarkMode
+            ).parentFile!!
+        ) { event: Int, _: String? ->
+            if (event in setOf(CLOSE_WRITE, MOVED_TO, MOVED_FROM, DELETE)) {
+                update()
             }
+        }
 
         override fun onActive() {
             super.onActive()
@@ -413,23 +400,21 @@ class ThumbnailRepository private constructor(
 
         PreviousRidesRepository[app].previousRides.observeForever(
             object : Observer<List<PreviousRide>> {
-                override fun onChanged(rides: List<PreviousRide>?) {
-                    if (rides != null) {
-                        // Remove thumbnails of rides that do not exist anymore
-                        val validThumbnailFiles = rides.flatMap { ride ->
-                            listOf(
-                                getThumbnailFileFor(ride, true),
-                                getThumbnailFileFor(ride, false)
-                            )
-                        }.toSet()
+                override fun onChanged(value: List<PreviousRide>) {
+                    // Remove thumbnails of rides that do not exist anymore
+                    val validThumbnailFiles = value.flatMap { ride ->
+                        listOf(
+                            getThumbnailFileFor(ride, true),
+                            getThumbnailFileFor(ride, false)
+                        )
+                    }.toSet()
 
-                        File(app.cacheDir, THUMBNAILS_DIRECTORY).listFiles()?.filter {
-                            !validThumbnailFiles.contains(it)
-                        }?.forEach { it.delete() }
+                    File(app.cacheDir, THUMBNAILS_DIRECTORY).listFiles()?.filter {
+                        !validThumbnailFiles.contains(it)
+                    }?.forEach { it.delete() }
 
-                        // Only remove thumbnails once per instance of the app
-                        PreviousRidesRepository[app].previousRides.removeObserver(this)
-                    }
+                    // Only remove thumbnails once per instance of the app
+                    PreviousRidesRepository[app].previousRides.removeObserver(this)
                 }
             })
     }

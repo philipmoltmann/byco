@@ -38,11 +38,6 @@
         <item name="actionBarStyle">@style/BycoActionBar</item>
     </style>
 
-    <style name="Theme.Byco.Preferences" parent="Theme.Byco.ActionBar">
-        <item name="colorAccent">@color/preferencesHighlight</item>
-        <item name="android:colorAccent">@color/preferencesHighlight</item>
-    </style>
-
     <style name="Theme.Byco.BaseDialog" parent="Theme.AppCompat.DayNight.Dialog.Alert">
         <item name="android:windowBackground">@drawable/dialog_window_background</item>
         <item name="android:colorBackground">@color/dialogBackground</item>

@@ -29,6 +29,8 @@ import androidapp.byco.data.*
 import androidapp.byco.lib.R
 import androidapp.byco.util.AsyncLiveData
 import androidapp.byco.util.addSources
+import androidapp.byco.util.compat.getApplicationInfoCompat
+import androidapp.byco.util.compat.getParcelableArrayListExtraCompat
 import androidapp.byco.util.plus
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
@@ -72,8 +74,7 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
     val smoothedBearing = LocationRepository[app].smoothedBearing
 
     /** Is there a previously recorded ride */
-    val hasPreviousRide =
-        Transformations.map(PreviousRidesRepository[app].previousRides) { it.isNotEmpty() }
+    val hasPreviousRide = PreviousRidesRepository[app].previousRides.map { it.isNotEmpty() }
 
     /** Is the current country using miles and mph? */
     val isUsingMiles = LocationRepository[app].isUsingMiles
@@ -108,15 +109,14 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
     private val hasLocationPermission = LocationRepository[app].hasLocationPermission
     private val shouldShowLocationPermissionRationale = MutableLiveData<Boolean>()
 
-    val shouldShowLocationPermissionPrompt = Transformations.map(hasLocationPermission) {!it}
+    val shouldShowLocationPermissionPrompt = hasLocationPermission.map { !it }
 
     /** Is currently a track (from a previous ride) shown? */
-    val isShowingTrack =
-        Transformations.map(PreviousRidesRepository[app].visibleTrack) { it != null }
+    val isShowingTrack = PreviousRidesRepository[app].visibleTrack.map { it != null }
 
     /** Is currently the directions back shown */
     val isShowingDirectionsBack =
-        Transformations.map(isShowingTrack + directionsBack) { (isShowingTrack, directionsBack) ->
+        (isShowingTrack + directionsBack).map { (isShowingTrack, directionsBack) ->
             (isShowingTrack == null || isShowingTrack == false) && directionsBack != null
         }
 
@@ -253,7 +253,7 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
             Intent(
                 Intent.ACTION_VIEW,
                 Uri.parse(
-                    app.packageManager.getApplicationInfo(
+                    app.packageManager.getApplicationInfoCompat(
                         app.packageName,
                         PackageManager.GET_META_DATA
                     ).metaData.getString("help_url")
@@ -353,8 +353,10 @@ class RidingActivityViewModel(private val app: Application, val state: SavedStat
                     PreviousRidesRepository[app].showOnMap(null)
 
                     // Set directions back as track
-                    directionsBack.value =
-                        result.data!!.getParcelableArrayListExtra(ConfirmDirectionsActivityViewModel.EXTRA_DIRECTIONS)
+                    directionsBack.value = result.data!!.getParcelableArrayListExtraCompat(
+                        ConfirmDirectionsActivityViewModel.EXTRA_DIRECTIONS,
+                        BasicLocation::class.java
+                    )
                 }
             }
 

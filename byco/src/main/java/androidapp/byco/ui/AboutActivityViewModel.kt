@@ -24,6 +24,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.widget.Toast
 import androidapp.byco.lib.R
+import androidapp.byco.util.compat.getApplicationInfoCompat
 import androidx.lifecycle.AndroidViewModel
 
 /** ViewModel for [AboutActivity] */
@@ -37,7 +38,7 @@ class AboutActivityViewModel(private val app: Application) : AndroidViewModel(ap
             Intent(
                 Intent.ACTION_VIEW,
                 Uri.parse(
-                    app.packageManager.getApplicationInfo(
+                    app.packageManager.getApplicationInfoCompat(
                         app.packageName,
                         PackageManager.GET_META_DATA
                     ).metaData.getString("privacy_policy_url")

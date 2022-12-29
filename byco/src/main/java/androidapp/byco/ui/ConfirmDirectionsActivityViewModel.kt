@@ -30,6 +30,7 @@ import android.net.Uri
 import androidapp.byco.FixedLowPriorityThreads
 import androidapp.byco.data.*
 import androidapp.byco.util.*
+import androidapp.byco.util.compat.resolveActivityCompat
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -95,7 +96,7 @@ class ConfirmDirectionsActivityViewModel(
             )
             gmmIntent.setPackage("com.google.android.apps.maps")
 
-            val resolveInfo = app.packageManager.resolveActivity(gmmIntent, 0)
+            val resolveInfo = app.packageManager.resolveActivityCompat(gmmIntent, 0)
             value = if (resolveInfo == null) {
                 null
             } else {
@@ -125,7 +126,7 @@ class ConfirmDirectionsActivityViewModel(
     }
 
     /** Should the activity show a button to launch the mapping app (via [openMappingApp]) ? */
-    val shouldShowMappingAppButton = Transformations.map(gmmIntent) {
+    val shouldShowMappingAppButton = gmmIntent.map {
         it != null
     }
 
@@ -151,7 +152,7 @@ class ConfirmDirectionsActivityViewModel(
 
     /** Searches for [route] */
     private val routeFinder =
-        Transformations.switchMap(persistedLocationAtInit + RouteFinderRepository[app].rideStart) { (start, goal) ->
+        (persistedLocationAtInit + RouteFinderRepository[app].rideStart).switchMap { (start, goal) ->
             if (start == null || goal == null) {
                 null
             } else {
@@ -168,7 +169,7 @@ class ConfirmDirectionsActivityViewModel(
      * The directions found. Returns intermediate, partial routes while searching for the best
      * route.
      */
-    private val route = Transformations.map(routeFinder) {
+    private val route = routeFinder.map {
         if (it is ArrayList<BasicLocation>) {
             it
         } else {
@@ -442,12 +443,12 @@ class ConfirmDirectionsActivityViewModel(
 
     /** Have directions for a route be found? */
     val areDirectionsFound =
-        Transformations.map(route + RouteFinderRepository[app].rideStart) { (route, rideStart) ->
+        (route + RouteFinderRepository[app].rideStart).map { (route, rideStart) ->
             route?.isEmpty() == true || route?.last() == rideStart
         }
 
     /** Is it impossible to find directions ? */
-    val cannotFindDirections = Transformations.map(route) { it != null && it.size <= 1 }
+    val cannotFindDirections = route.map { it.size <= 1 }
 
     /** Cancel the directions finding dialog */
     fun cancel(activity: AppCompatActivity) {

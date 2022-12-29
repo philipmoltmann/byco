@@ -24,7 +24,7 @@ import androidapp.byco.data.OsmDataProvider.HighwayType.*
 import androidapp.byco.data.OsmDataProvider.ServiceType.ALLEY
 import androidapp.byco.util.*
 import androidx.lifecycle.MediatorLiveData
-import androidx.lifecycle.Transformations
+import androidx.lifecycle.switchMap
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.consume
 import kotlinx.coroutines.flow.consumeAsFlow
@@ -33,6 +33,7 @@ import lib.gpx.BasicLocation
 import lib.gpx.DebugLog
 import lib.gpx.MapArea
 import java.math.BigDecimal
+import java.math.RoundingMode.*
 import java.util.*
 import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.Comparator
@@ -78,7 +79,7 @@ class RouteFinderRepository internal constructor(
     val rideStart = object : MediatorLiveData<BasicLocation>() {
         init {
             addSources(
-                Transformations.switchMap(RideEstimator.instance) { it?.rideStart },
+                RideEstimator.instance.switchMap { it?.rideStart },
                 RideRecordingRepository[app].rideStart
             ) {
                 val recordedRideStart = RideRecordingRepository[app].rideStart.value
@@ -125,14 +126,6 @@ class RouteFinderRepository internal constructor(
         providedCountryCode: CountryCode = null
     ) =
         object : AsyncLiveData<List<BasicLocation>>() {
-            private val countryCode by lazy {
-                providedCountryCode ?: getCountryCode(
-                    app,
-                    startLoc.toLocation(),
-                    true
-                )
-            }
-
             /**
              * Small local cache as we often search along a path and hence a neighbor might be the
              * next node
@@ -149,26 +142,17 @@ class RouteFinderRepository internal constructor(
 
             /** Round double to a [BigDecimal] so it is the edge of a map tile */
             private fun Double.roundToBigDecimalMapTileScale(): BigDecimal {
-                return toBigDecimal().setScale(
-                    MapDataRepository.TILE_SCALE,
-                    BigDecimal.ROUND_HALF_UP
-                )
+                return toBigDecimal().setScale(MapDataRepository.TILE_SCALE, HALF_UP)
             }
 
             /** Round double to a [BigDecimal] so it is the lower edge of a elevation tile */
             private fun Double.floorToBigDecimalElevationTileScale(): BigDecimal {
-                return toBigDecimal().setScale(
-                    ElevationDataRepository.TILE_SCALE,
-                    BigDecimal.ROUND_FLOOR
-                )
+                return toBigDecimal().setScale(ElevationDataRepository.TILE_SCALE, FLOOR)
             }
 
             /** Round double to a [BigDecimal] so it is the upper edge of a elevation tile */
             private fun Double.ceilToBigDecimalElevationTileScale(): BigDecimal {
-                return toBigDecimal().setScale(
-                    ElevationDataRepository.TILE_SCALE,
-                    BigDecimal.ROUND_CEILING
-                )
+                return toBigDecimal().setScale(ElevationDataRepository.TILE_SCALE, CEILING)
             }
 
             /** Get all tuples of [Node]s that are connected a bikeable [Way] in this [MapData]. */
@@ -228,8 +212,9 @@ class RouteFinderRepository internal constructor(
 
                 // use country code of start as otherwise the resolving will really slow us down
                 val wayFactor =
-                    if (!(way.bicycle?.isAllowed
-                            ?: (way.highway?.areBicyclesAllowedByDefault(countryCode) == true))
+                    if (!(way.bicycle?.isAllowed ?: (way.highway?.areBicyclesAllowedByDefault(
+                            providedCountryCode
+                        ) == true))
                     ) {
                         Float.POSITIVE_INFINITY
                     } else if (way.bicycle == DESIGNATED) {
@@ -262,11 +247,11 @@ class RouteFinderRepository internal constructor(
                                 }
                             SERVICE ->
                                 when (way.service?.shouldBeShown) {
-                                    way.service == ALLEY -> 1.6f
+                                    (way.service == ALLEY) -> 1.6f
                                     // All other types other than alley are not good paths
-                                    way.service != null -> Float.POSITIVE_INFINITY
+                                    (way.service != null) -> Float.POSITIVE_INFINITY
                                     // Unnamed service ways are often driveways and the like
-                                    way.name == null -> Float.POSITIVE_INFINITY
+                                    (way.name == null) -> Float.POSITIVE_INFINITY
                                     // Named services way without service type ar often basically
                                     // smaller streets. But as they are obviously not normal, rank
                                     // them quite low
@@ -621,7 +606,7 @@ class RouteFinderRepository internal constructor(
                             bestStartToNode[current.id]!! + current.to(neighbor, way)
 
                         if (startToCurrentToNeighbor <
-                            bestStartToNode[neighbor.id] ?: Float.POSITIVE_INFINITY
+                            (bestStartToNode[neighbor.id] ?: Float.POSITIVE_INFINITY)
                         ) {
                             bestPrevNode[neighbor.id] = current.toPreviousNode()
 

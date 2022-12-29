@@ -17,11 +17,12 @@
 package androidapp.byco.data
 
 import android.app.Application
-import android.os.FileObserver
+import android.os.FileObserver.*
 import androidapp.byco.RECORDINGS_DIRECTORY
 import androidapp.byco.util.AsyncLiveData
 import androidapp.byco.util.SelfCleaningCache
 import androidapp.byco.util.SingleParameterSingletonOf
+import androidapp.byco.util.compat.createFileObserverCompat
 import androidapp.byco.util.newEntry
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MediatorLiveData
@@ -68,16 +69,16 @@ class PreviousRidesRepository private constructor(
     }
 
     inner class PreviousRides : AsyncLiveData<List<PreviousRide>>() {
-        // Support API23
-        @Suppress("DEPRECATION")
-        private val directoryObserver =
-            object : FileObserver(File(app.filesDir, RECORDINGS_DIRECTORY).absolutePath) {
-                override fun onEvent(event: Int, path: String?) {
-                    if (event in setOf(CLOSE_WRITE, MOVED_TO, MOVED_FROM, DELETE)) {
-                        requestUpdate()
-                    }
-                }
+        private val directoryObserver = createFileObserverCompat(
+            File(
+                app.filesDir,
+                RECORDINGS_DIRECTORY
+            )
+        ) { event: Int, _: String? ->
+            if (event in setOf(CLOSE_WRITE, MOVED_TO, MOVED_FROM, DELETE)) {
+                requestUpdate()
             }
+        }
 
         init {
             addSource(RideRecordingRepository[app].isRideBeingRecorded) {

@@ -30,16 +30,11 @@ import androidx.annotation.RequiresPermission
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.Transformations
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.*
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.launch
-import java.util.concurrent.TimeUnit.MILLISECONDS
-import java.util.concurrent.TimeUnit.SECONDS
+import java.util.concurrent.TimeUnit.*
 import kotlin.math.abs
 
 /** Location related state */
@@ -49,7 +44,10 @@ class LocationRepository internal constructor(
     private val MOVING_ACCURACY_REQUIRED: Float = 20F, // m
     private val SPEED_TO_STOP_MOVING: Float = 0.9F, // m/s (== 3 km/h)
     private val SPEED_TO_START_MOVING: Float = 1.5F, // m/s  (== 5 km/h)
-    private val COUNTRY_CODE_UPDATE_INTERVAL: Long = SECONDS.toMillis(30)
+    private val COUNTRY_CODE_UPDATE_INTERVAL: Long = SECONDS.toMillis(30),
+    private val PASSIVE_LOCATION_ACCURACY_PREFERRED: Float = 100F, // m
+    private val PASSIVE_LOCATION_INACCURATE_DELAY: Long = MINUTES.toMillis(10),
+    private val PASSIVE_LOCATION_INACCURATE_INTERVAL: Long = MINUTES.toMillis(5)
 ) {
     /**
      * Does the current app have the location permission.
@@ -59,6 +57,8 @@ class LocationRepository internal constructor(
     val hasLocationPermission =
         MutableLiveData(app.checkSelfPermission(ACCESS_FINE_LOCATION) == PERMISSION_GRANTED)
 
+    private data class LocationUpdate(val accuracy: Float, val time: Long)
+
     /**
      * [Passive location](https://developer.android.com/reference/android/location/LocationManager#PASSIVE_PROVIDER)
      *
@@ -66,6 +66,8 @@ class LocationRepository internal constructor(
      */
     val passiveLocation = object : MediatorLiveData<Location>() {
         private var isLiveDataActive = false
+
+        private val recentUpdates = mutableMapOf<String, LocationUpdate>()
 
         init {
             addSource(hasLocationPermission) { hasPermission ->
@@ -76,6 +78,31 @@ class LocationRepository internal constructor(
         }
 
         val callback = LocationListener { location ->
+            if (location.provider == null || !location.hasAccuracy()) {
+                return@LocationListener
+            }
+
+            val now = SystemClock.elapsedRealtime()
+
+            if (location.accuracy > PASSIVE_LOCATION_ACCURACY_PREFERRED) {
+                if (recentUpdates.values.find { locationUpdate ->
+                        locationUpdate.accuracy <= PASSIVE_LOCATION_ACCURACY_PREFERRED
+                                && now - locationUpdate.time < PASSIVE_LOCATION_INACCURATE_DELAY
+                    } != null) {
+                    // Ignore this update, we recently had a more precise one
+                    return@LocationListener
+                }
+
+                if (recentUpdates.values.find { locationUpdate ->
+                        now - locationUpdate.time < PASSIVE_LOCATION_INACCURATE_INTERVAL
+                    } != null) {
+                    // Ignore this update, we recently posted a similarly imprecise one
+                    return@LocationListener
+                }
+            }
+
+            recentUpdates[location.provider!!] = LocationUpdate(location.accuracy, now)
+
             postValue(location)
         }
 
@@ -84,7 +111,7 @@ class LocationRepository internal constructor(
             app.getSystemService(LocationManager::class.java).requestLocationUpdates(
                 LocationManager.PASSIVE_PROVIDER,
                 LOCATION_UPDATE_INTERVAL,
-                100F,
+                PASSIVE_LOCATION_ACCURACY_PREFERRED,
                 callback
             )
         }
@@ -130,9 +157,11 @@ class LocationRepository internal constructor(
             private var lastBearing = 0f
 
             override fun onLocationResult(location: LocationResult) {
+                val lastLocation = location.lastLocation ?: return
+
                 if (abs(
                         SystemClock.elapsedRealtimeNanos()
-                                - location.lastLocation.elapsedRealtimeNanos
+                                - lastLocation.elapsedRealtimeNanos
                     ) > MILLISECONDS.toNanos(LOCATION_UPDATE_INTERVAL * 4)
                 ) {
                     return
@@ -141,9 +170,9 @@ class LocationRepository internal constructor(
                 liveDataScope.launch(Main.immediate) {
                     // Update isMoving here instead making isMoving a MediatorLiveData to guarantee
                     // it being updated before any observer is called
-                    isMoving.update(location.lastLocation)
+                    isMoving.update(lastLocation)
 
-                    value = location.lastLocation.apply {
+                    value = lastLocation.apply {
                         // Don't change bearing if not moving
                         if (isMoving.value != true) {
                             bearing = lastBearing
@@ -164,12 +193,10 @@ class LocationRepository internal constructor(
             }
 
             fusedLocationClient.requestLocationUpdates(
-                LocationRequest.create().apply {
-                    interval = LOCATION_UPDATE_INTERVAL
-                    fastestInterval = LOCATION_UPDATE_INTERVAL
-                    isWaitForAccurateLocation = true
-                    priority = LocationRequest.PRIORITY_HIGH_ACCURACY
-                }, callback, Looper.getMainLooper()
+                LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, LOCATION_UPDATE_INTERVAL)
+                    .setMinUpdateIntervalMillis(LOCATION_UPDATE_INTERVAL)
+                    .setWaitForAccurateLocation(true)
+                    .build(), callback, Looper.getMainLooper()
             )
         }
 
@@ -198,7 +225,7 @@ class LocationRepository internal constructor(
         private var lastUpdate = 0L
 
         init {
-            value = getCountryCode(app, null)
+            value = getCountryCodeFromLocale(app)
 
             requestUpdateIfChanged(passiveLocation)
         }
@@ -291,7 +318,7 @@ class LocationRepository internal constructor(
                         null
                     }.also {
                         if (nextLoc != null) {
-                            recentDistance += prevLoc.distanceTo(nextLoc)
+                            recentDistance += prevLoc.distanceTo(nextLoc!!)
                         }
                         nextLoc = prevLoc
                     }

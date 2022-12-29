@@ -42,5 +42,4 @@
     <color name="dialogBackground">@color/dark_gray</color>
     <color name="windowBackground">@color/very_dark_gray</color>
 
-    <color name="preferencesHighlight">@color/accent</color>
 </resources>

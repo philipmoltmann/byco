@@ -17,7 +17,6 @@
 package androidapp.byco.background
 
 import android.app.*
-import android.app.NotificationManager.IMPORTANCE_LOW
 import android.app.PendingIntent.*
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -25,7 +24,6 @@ import android.content.Intent
 import android.content.Intent.ACTION_SHUTDOWN
 import android.content.IntentFilter
 import android.location.Location
-import android.os.Build
 import android.os.DeadObjectException
 import android.os.IBinder
 import androidapp.byco.NotificationIds
@@ -40,8 +38,11 @@ import androidapp.byco.ui.RidingActivity
 import androidapp.byco.ui.StopRideActivity
 import androidx.annotation.GuardedBy
 import androidx.annotation.MainThread
+import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationCompat.PRIORITY_LOW
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.ServiceCompat
 import androidx.lifecycle.Observer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers.Main
@@ -283,14 +284,12 @@ class RideRecorder : Service() {
         }
 
         private fun getNotification(rideTime: Duration): Notification {
-            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.O) {
-                getSystemService(NotificationManager::class.java).createNotificationChannel(
-                    NotificationChannel(
-                        ONGOING_TRIP_RECORDINGS_NOTIFICATION_CHANNEL,
-                        getString(R.string.ongoing_recording_notification_channel), IMPORTANCE_LOW
-                    )
-                )
-            }
+            NotificationManagerCompat.from(this@RideRecorder).createNotificationChannel(
+                NotificationChannelCompat.Builder(
+                    ONGOING_TRIP_RECORDINGS_NOTIFICATION_CHANNEL,
+                    NotificationManagerCompat.IMPORTANCE_LOW
+                ).setName(getString(R.string.ongoing_recording_notification_channel)).build()
+            )
 
             return NotificationCompat.Builder(
                 this@RideRecorder,
@@ -447,7 +446,10 @@ class RideRecorder : Service() {
                 rideStartLocation = null
 
                 if (usesForegroundService) {
-                    stopForeground(true)
+                    ServiceCompat.stopForeground(
+                        this@RideRecorder,
+                        ServiceCompat.STOP_FOREGROUND_REMOVE
+                    )
                     getSystemService(NotificationManager::class.java)
                         .cancel(NotificationIds.RIDE_RECORDING.ordinal)
                 }

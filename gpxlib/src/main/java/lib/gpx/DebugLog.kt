@@ -21,6 +21,7 @@ import android.util.Log
 /**
  * Like [Log] but only prints in non-release builds
  */
+@Suppress("KotlinConstantConditions")
 class DebugLog {
     companion object {
         fun v(tag: String, message: String, exception: Throwable? = null) {

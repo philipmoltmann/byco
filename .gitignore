@@ -16,3 +16,5 @@
 .cxx
 local.properties
 /gpxplayer/
+/.idea/shelf/
+/.idea/kotlinc.xml
