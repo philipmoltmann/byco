@@ -19,17 +19,22 @@ package androidapp.byco.ui
 import android.app.Activity
 import android.app.Application
 import android.content.Intent
+import android.widget.Toast
 import androidapp.byco.data.PreviousRide
 import androidapp.byco.data.PreviousRidesRepository
+import androidapp.byco.lib.R
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MediatorLiveData
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import lib.gpx.DebugLog
 import lib.gpx.GPX_MIME_TYPE
 import java.io.FileInputStream
@@ -107,6 +112,9 @@ class PreviousRidesViewModel(private val app: Application, state: SavedStateHand
         }
     }
 
+    /** The most recently added ride. */
+    val recentlyAddedRide = MutableLiveData<PreviousRide?>()
+
     /** Allow this view model to use the passed [activity] for start-with-activity-result */
     fun registerActivityResultsContracts(activity: AppCompatActivity) {
         addRideLauncher = activity.registerForActivityResult(OpenMultipleDocuments()) { uris ->
@@ -116,10 +124,27 @@ class PreviousRidesViewModel(private val app: Application, state: SavedStateHand
                         app.contentResolver.openFileDescriptor(
                             uri,
                             "r"
-                        )?.fileDescriptor?.let { fd ->
-                            PreviousRidesRepository[app].addRide(
-                                FileInputStream(fd)
-                            )
+                        )?.use {
+                            it.fileDescriptor?.let { fd ->
+                                val ride = PreviousRidesRepository[app].addRide(
+                                    FileInputStream(fd)
+                                )
+
+                                ride?.let { r ->
+                                    withContext(Main) {
+                                        recentlyAddedRide.value = r
+                                        recentlyAddedRide.value = null
+                                    }
+                                } ?: run {
+                                    withContext(Main) {
+                                        Toast.makeText(
+                                            activity,
+                                            R.string.could_not_add_ride,
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }
                         }
                     } catch (e: Exception) {
                         DebugLog.e(TAG, "Cannot add $uri", e)

@@ -102,4 +102,7 @@
     <string name="save_to_file_message">Save %s to file</string>
 
     <string name="dismiss">Dismiss</string>
+
+    <string name="add_ride_result">Added %s</string>
+    <string name="could_not_add_ride">Could not add ride</string>
 </resources>

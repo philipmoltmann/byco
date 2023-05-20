@@ -17,6 +17,7 @@
 package androidapp.byco.ui
 
 import android.app.Application
+import androidapp.byco.data.PreviousRide
 import androidapp.byco.data.PreviousRidesRepository
 import androidx.lifecycle.AndroidViewModel
 import java.io.InputStream
@@ -24,7 +25,5 @@ import java.io.InputStream
 /** ViewModel for [AddRideActivity] */
 class AddRideRecordingViewModel(private val app: Application) : AndroidViewModel(app) {
     /** Add a [ride] loaded from an [InputStream] to the list of known `PreviousRide`s */
-    suspend fun add(ride: InputStream) {
-        PreviousRidesRepository[app].addRide(ride)
-    }
+    suspend fun add(ride: InputStream): PreviousRide? = PreviousRidesRepository[app].addRide(ride)
 }

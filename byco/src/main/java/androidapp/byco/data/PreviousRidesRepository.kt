@@ -29,6 +29,7 @@ import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.MutableLiveData
 import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import lib.gpx.*
@@ -258,12 +259,14 @@ class PreviousRidesRepository private constructor(
      * Add a ride to the repository of previous rides.
      *
      * This ride is persisted on disk.
+     *
+     * @return The newly added ride
      */
     @Suppress("BlockingMethodInNonBlockingContext")
     suspend fun addRide(
         newRideIs: InputStream,
         fileName: String? = null
-    ) {
+    ): PreviousRide? {
         val file = if (fileName != null) {
             File(app.filesDir, fileName)
         } else {
@@ -283,8 +286,12 @@ class PreviousRidesRepository private constructor(
         // atomic rename to never not have partial files (due to crashes) in repository.
         file.renameTo(File(File(app.filesDir, RECORDINGS_DIRECTORY), file.name))
 
-        // Instantly update live data as file observer can be unreliable
-        previousRides.requestUpdate()
+        // Instantly and synchronous update [previousRides]
+        withContext(Main) {
+            previousRides.value = previousRides.update()
+        }
+
+        return previousRides.value?.find { ride -> ride.file.name == file.name }
     }
 
     fun delete(ride: PreviousRide) {
@@ -298,7 +305,6 @@ class PreviousRidesRepository private constructor(
      * Change title of a [ride]
      */
     suspend fun changeTitle(ride: PreviousRide, newTitle: String) {
-        @Suppress("BlockingMethodInNonBlockingContext")
         withContext(IO) {
             val ins = PipedInputStream()
             val out = PipedOutputStream(ins)

@@ -40,6 +40,7 @@ import androidx.appcompat.widget.SearchView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.Observer
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.text.DateFormat
 import java.text.DateFormat.SHORT
@@ -80,9 +81,25 @@ class PreviousRidesActivity : AppCompatActivity() {
             private var previousRides: List<PreviousRide> = emptyList()
 
             init {
-                viewModel.previousRides.observe(this@PreviousRidesActivity) { rides ->
-                    previousRides = rides ?: emptyList()
+                fun updatePreviousRides() {
+                    previousRides = viewModel.previousRides.value ?: emptyList()
                     notifyDataSetChanged()
+                }
+
+                viewModel.previousRides.observe(this@PreviousRidesActivity) {
+                    updatePreviousRides()
+                }
+
+                viewModel.recentlyAddedRide.observe(this@PreviousRidesActivity) { addedRide ->
+                    updatePreviousRides()
+
+                    val position = previousRides.indexOf(addedRide)
+                    if (position >= 0) {
+                        ((binding.rides as RecyclerView).layoutManager!! as LinearLayoutManager).scrollToPositionWithOffset(
+                            position,
+                            0
+                        )
+                    }
                 }
             }
 

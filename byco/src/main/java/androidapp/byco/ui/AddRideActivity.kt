@@ -20,13 +20,16 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
 import androidapp.byco.lib.R
 import androidapp.byco.util.compat.getParcelableExtraCompat
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.coroutineScope
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Action receiver when adding a ride shared by another app
@@ -49,10 +52,23 @@ class AddRideActivity : AppCompatActivity() {
             )!!
 
             lifecycle.coroutineScope.launch(IO) {
-                try {
+                val addedRide = try {
                     viewModel.add(src)
                 } catch (e: Exception) {
                     Log.e(TAG, "Could not add ride", e)
+                    null
+                }
+
+                withContext(Main) {
+                    Toast.makeText(
+                        this@AddRideActivity,
+                        addedRide?.let { r ->
+                            getString(
+                                R.string.add_ride_result,
+                                r.title ?: getString(R.string.unknown_ride_name)
+                            )
+                        } ?: getString(R.string.could_not_add_ride),
+                        Toast.LENGTH_SHORT).show()
                 }
 
                 src.close()

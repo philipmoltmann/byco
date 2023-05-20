@@ -100,4 +100,7 @@
     <string name="save_to_file_message">Speichere %s als Datei</string>
 
     <string name="dismiss">Verstecken</string>
+
+    <string name="add_ride_result">%s hinzugefügt</string>
+    <string name="could_not_add_ride">Fahrt kann nicht hinzugefügt werden</string>
 </resources>
