@@ -79,6 +79,16 @@
                 <data android:mimeType="application/gpx+xml" />
             </intent-filter>
         </activity>
+        <activity-alias
+            android:name="AddRideActivityInternal"
+            android:exported="false"
+            android:targetActivity="androidapp.byco.ui.AddRideActivity"
+            android:theme="@style/Theme.Byco.Dialog.NoCloseOnTouchOutside">
+            <intent-filter>
+                <action android:name="ACTION_ADD_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
         <activity
             android:name="androidapp.byco.ui.ShareRideActivity"
             android:exported="false"

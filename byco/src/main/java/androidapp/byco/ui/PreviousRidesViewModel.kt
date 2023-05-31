@@ -19,11 +19,10 @@ package androidapp.byco.ui
 import android.app.Activity
 import android.app.Application
 import android.content.Intent
-import android.widget.Toast
 import androidapp.byco.data.PreviousRide
 import androidapp.byco.data.PreviousRidesRepository
-import androidapp.byco.lib.R
 import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.AndroidViewModel
@@ -31,15 +30,10 @@ import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import lib.gpx.DebugLog
 import lib.gpx.GPX_MIME_TYPE
-import java.io.FileInputStream
 import java.text.DateFormat
-import java.util.*
+import java.util.Date
 
 /** ViewModel for [PreviousRidesActivity] */
 class PreviousRidesViewModel(private val app: Application, state: SavedStateHandle) :
@@ -47,7 +41,8 @@ class PreviousRidesViewModel(private val app: Application, state: SavedStateHand
     private val TAG = PreviousRidesRepository::class.java.simpleName
     private val KEY_TITLE_FILTER = "title_filter"
 
-    private lateinit var addRideLauncher: ActivityResultLauncher<Array<String>>
+    private lateinit var selectFileToAddLauncher: ActivityResultLauncher<Array<String>>
+    private lateinit var addRideLauncher: ActivityResultLauncher<Intent>
 
     val titleFilter = state.getLiveData<String?>(KEY_TITLE_FILTER, null)
 
@@ -82,7 +77,7 @@ class PreviousRidesViewModel(private val app: Application, state: SavedStateHand
 
     /** Trigger the UI flow to add a ride */
     fun add() {
-        addRideLauncher.launch(arrayOf("*/*", GPX_MIME_TYPE))
+        selectFileToAddLauncher.launch(arrayOf("*/*", GPX_MIME_TYPE))
     }
 
     /** Delete a [ride] */
@@ -117,40 +112,26 @@ class PreviousRidesViewModel(private val app: Application, state: SavedStateHand
 
     /** Allow this view model to use the passed [activity] for start-with-activity-result */
     fun registerActivityResultsContracts(activity: AppCompatActivity) {
-        addRideLauncher = activity.registerForActivityResult(OpenMultipleDocuments()) { uris ->
-            uris.forEach { uri ->
-                viewModelScope.launch(IO) {
-                    try {
-                        app.contentResolver.openFileDescriptor(
-                            uri,
-                            "r"
-                        )?.use {
-                            it.fileDescriptor?.let { fd ->
-                                val ride = PreviousRidesRepository[app].addRide(
-                                    FileInputStream(fd)
-                                )
-
-                                ride?.let { r ->
-                                    withContext(Main) {
-                                        recentlyAddedRide.value = r
-                                        recentlyAddedRide.value = null
-                                    }
-                                } ?: run {
-                                    withContext(Main) {
-                                        Toast.makeText(
-                                            activity,
-                                            R.string.could_not_add_ride,
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
+        addRideLauncher =
+            activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+                if (it.resultCode == Activity.RESULT_OK) {
+                    it.data?.getStringArrayListExtra(AddRideActivity.EXTRA_ADDED_FILE_NAMES)?.lastOrNull()
+                        ?.let { lastAddedFile ->
+                            PreviousRidesRepository[app].previousRides.value?.find { ride -> ride.file.name == lastAddedFile }
+                                .let { lastAddedRide ->
+                                    recentlyAddedRide.value = lastAddedRide
+                                    recentlyAddedRide.value = null
                                 }
-                            }
                         }
-                    } catch (e: Exception) {
-                        DebugLog.e(TAG, "Cannot add $uri", e)
-                    }
                 }
             }
-        }
+
+        selectFileToAddLauncher =
+            activity.registerForActivityResult(OpenMultipleDocuments()) { uris ->
+                addRideLauncher.launch(
+                    Intent(AddRideActivity.ACTION_ADD_MULTIPLE).setPackage(app.packageName)
+                        .putParcelableArrayListExtra(AddRideActivity.EXTRA_URIS, ArrayList(uris))
+                )
+            }
     }
 }

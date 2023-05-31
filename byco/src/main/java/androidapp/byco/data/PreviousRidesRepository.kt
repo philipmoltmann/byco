@@ -265,7 +265,8 @@ class PreviousRidesRepository private constructor(
     @Suppress("BlockingMethodInNonBlockingContext")
     suspend fun addRide(
         newRideIs: InputStream,
-        fileName: String? = null
+        fileName: String? = null,
+        progressCallback: suspend (Float?) -> Unit
     ): PreviousRide? {
         val file = if (fileName != null) {
             File(app.filesDir, fileName)
@@ -273,10 +274,27 @@ class PreviousRidesRepository private constructor(
             File.createTempFile("import-", GPX_ZIP_FILE_EXTENSION, app.filesDir)
         }
 
+        // Is there a better way to guess the size of the input?
+        val estimatedSize = newRideIs.available()
+
         file.outputStream().buffered().use { os ->
             ZipOutputStream(os).use { zipOs ->
                 zipOs.newEntry(TRACK_ZIP_ENTRY) {
-                    newRideIs.copyTo(zipOs)
+                    var numTotalRead = 0L
+                    val buffer = ByteArray(16384)
+
+                    var numRead = newRideIs.read(buffer)
+                    while (numRead >= 0) {
+                        zipOs.write(buffer, 0, numRead)
+                        numTotalRead += numRead
+                        numRead = newRideIs.read(buffer)
+
+                        if (estimatedSize <= 0 || numTotalRead >= estimatedSize) {
+                            progressCallback(null)
+                        } else {
+                            progressCallback(numTotalRead.toFloat() / estimatedSize)
+                        }
+                    }
                 }
             }
         }
@@ -311,7 +329,7 @@ class PreviousRidesRepository private constructor(
 
             // receive data from pipe and add as ride
             launch {
-                ins.buffered().use { addRide(it, ride.file.name) }
+                ins.buffered().use { addRide(it, ride.file.name) {} }
             }
 
             // Re-serialize ride into pipe

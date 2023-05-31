@@ -20,33 +20,36 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="16dp"
+    android:paddingLeft="16dp"
+    android:paddingTop="16dp"
+    android:paddingRight="16dp"
+    android:paddingBottom="8dp"
     tools:context="androidapp.byco.ui.AddRideActivity">
 
-    <LinearLayout
-        android:id="@+id/bycoIcon"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:background="@drawable/circle_button_background"
-        android:orientation="vertical"
-        android:outlineProvider="background"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
-
-        <ImageView
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:src="@mipmap/ic_launcher"
-            tools:ignore="ContentDescription" />
-
-    </LinearLayout>
+    <Button
+        android:id="@+id/cancel"
+        style="@style/BycoAlertDialogButton"
+        android:layout_marginEnd="-4dp"
+        android:text="@string/cancel"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
     <TextView
+        android:id="@+id/add_ride_label"
         style="@style/BycoText.Small"
-        android:layout_marginStart="16dp"
         android:text="@string/adding_ride_label"
-        app:layout_constraintBottom_toBottomOf="@+id/bycoIcon"
-        app:layout_constraintStart_toEndOf="@+id/bycoIcon"
-        app:layout_constraintTop_toTopOf="@+id/bycoIcon" />
+        android:layout_width="match_parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <ProgressBar
+        android:id="@+id/progress"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        style="@style/Widget.AppCompat.ProgressBar.Horizontal"
+        app:layout_constraintTop_toBottomOf="@id/add_ride_label"
+        app:layout_constraintBottom_toTopOf="@id/cancel"
+        android:layout_marginTop="8dp"
+        android:max="1000"
+        android:indeterminate="true" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

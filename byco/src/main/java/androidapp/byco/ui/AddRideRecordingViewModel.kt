@@ -25,5 +25,6 @@ import java.io.InputStream
 /** ViewModel for [AddRideActivity] */
 class AddRideRecordingViewModel(private val app: Application) : AndroidViewModel(app) {
     /** Add a [ride] loaded from an [InputStream] to the list of known `PreviousRide`s */
-    suspend fun add(ride: InputStream): PreviousRide? = PreviousRidesRepository[app].addRide(ride)
+    suspend fun add(ride: InputStream, progressCallback: suspend (Float?) -> Unit): PreviousRide? =
+        PreviousRidesRepository[app].addRide(ride, null, progressCallback)
 }
