@@ -21,6 +21,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
 import android.util.AttributeSet
 import android.view.View
 import androidapp.byco.data.ElevationProgressNode
@@ -143,9 +144,13 @@ class ElevationView(
     private val progressColor =
         styledAttrs.getColor(R.styleable.ElevationView_progressColor, Color.DKGRAY)
     private val progressMarkerColor =
-        styledAttrs.getColor(R.styleable.ElevationView_progressMarkerColor, Color.WHITE)
-    private val progressMarkerWidth =
-        styledAttrs.getDimension(R.styleable.ElevationView_progressMarkerWidth, 5f)
+        styledAttrs.getColor(R.styleable.ElevationView_progressMarkerColor, Color.RED)
+    private val progressMarkerRadius =
+        styledAttrs.getDimension(R.styleable.ElevationView_progressMarkerRadius, 15f)
+    private val progressLineColor =
+        styledAttrs.getColor(R.styleable.ElevationView_progressLineColor, Color.WHITE)
+    private val progressLineWidth =
+        styledAttrs.getDimension(R.styleable.ElevationView_progressLineWidth, 5f)
 
     constructor(context: Context) : this(context, null)
     constructor(context: Context, attrs: AttributeSet?) : this(context, attrs, 0)
@@ -264,21 +269,37 @@ class ElevationView(
             style = Paint.Style.FILL
         })
 
+        val progressTop = PointF(
+            (progress - processedElevations.first().progress) * scaleFactorX,
+            height - (progressEle - minEle) * scaleFactorY
+        )
         val progressMarker = Path().apply {
-            val progressX = (progress - processedElevations.first().progress) * scaleFactorX
-            val progressY = height - (progressEle - minEle) * scaleFactorY
-
-            moveToLineTo(progressX, progressY)
-            moveToLineTo(progressX, height.toFloat())
+            moveToLineTo(progressTop.x, progressTop.y)
+            moveToLineTo(progressTop.x, height.toFloat())
         }
 
         canvas.drawPath(progressMarker, Paint().apply {
             isAntiAlias = true
-            color = progressMarkerColor
-            strokeWidth = progressMarkerWidth
+            color = progressLineColor
+            strokeWidth = progressLineWidth
             strokeCap = Paint.Cap.ROUND
             style = Paint.Style.STROKE
         })
+
+        canvas.drawCircle(progressTop.x,
+            progressTop.y, progressMarkerRadius, Paint().apply {
+                color = progressMarkerColor
+                style = Paint.Style.FILL
+            }
+        )
+        canvas.drawCircle(progressTop.x,
+            progressTop.y, progressMarkerRadius, Paint().apply {
+                isAntiAlias = true
+                color = progressLineColor
+                strokeWidth = progressLineWidth
+                style = Paint.Style.STROKE
+            }
+        )
     }
 
     companion object {

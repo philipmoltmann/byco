@@ -137,10 +137,12 @@
 
     <style name="BycoElevation">
         <item name="color">@color/black</item>
-        <item name="progressColor">@color/black</item>
+        <item name="progressColor">@color/extremely_dark_gray</item>
         <item name="topLineColor">@color/speed_shade_divider</item>
-        <item name="progressMarkerColor">@color/light_gray</item>
-        <item name="progressMarkerWidth">2dp</item>
+        <item name="progressLineColor">@color/light_gray</item>
+        <item name="progressLineWidth">2dp</item>
+        <item name="progressMarkerColor">@color/cursor_color</item>
+        <item name="progressMarkerRadius">8dp</item>
         <item name="topLineWidth">1dp</item>
     </style>
 

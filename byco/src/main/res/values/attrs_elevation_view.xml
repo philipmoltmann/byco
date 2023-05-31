@@ -20,7 +20,9 @@
         <attr name="topLineColor" format="color" />
         <attr name="topLineWidth" format="dimension" />
         <attr name="progressColor" format="color" />
-        <attr name="progressMarkerWidth" format="dimension" />
+        <attr name="progressLineWidth" format="dimension" />
+        <attr name="progressLineColor" format="color" />
+        <attr name="progressMarkerRadius" format="dimension" />
         <attr name="progressMarkerColor" format="color" />
     </declare-styleable>
 </resources>
