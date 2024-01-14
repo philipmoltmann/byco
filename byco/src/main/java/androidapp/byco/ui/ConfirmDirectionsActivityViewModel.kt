@@ -160,7 +160,7 @@ class ConfirmDirectionsActivityViewModel(
     private val routeAreaFlows = mutableMapOf<Pair<Int, Int>, WeakReference<StateFlow<MapArea?>>>()
     private suspend fun getRouteArea(width: Int, height: Int): StateFlow<MapArea?> {
         routeAreaFlowsMutex.withLock {
-            routeAreaFlows.keys.forEach { key ->
+            routeAreaFlows.keys.toMutableSet().forEach { key ->
                 if (routeAreaFlows[key]?.get() == null) {
                     routeAreaFlows.remove(key)
                 }

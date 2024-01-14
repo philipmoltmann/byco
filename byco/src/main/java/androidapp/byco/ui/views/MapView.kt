@@ -22,6 +22,7 @@ import android.graphics.*
 import android.graphics.Color.*
 import android.graphics.drawable.Drawable
 import android.location.Location
+import android.os.Build
 import android.os.SystemClock
 import android.util.AttributeSet
 import android.util.TypedValue
@@ -38,7 +39,6 @@ import androidx.annotation.ColorInt
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.content.res.AppCompatResources
-import androidx.core.graphics.applyCanvas
 import androidx.core.graphics.withMatrix
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.*
@@ -147,7 +147,8 @@ class MapView(
     private val TAG = MapView::class.java.simpleName
 
     private val CAMERA_Z = 15f
-    private val MAX_FPS = 30
+    private val MAX_FPS = 60
+    private val MIN_FPS = 5
     private val DRAGGED_CENTER_TIMEOUT = 5000L // ms
     private val ANIMATION_DURATION_AFTER_DRAGGED_CENTER = 1000L // ms
 
@@ -209,18 +210,44 @@ class MapView(
     private var centerAndLocationInterpolator: Job? = null
     private var centerAndLocationUpdater: Job? = null
 
-    private class FrameBuffer(
-        val frame: Bitmap,
-        val transform: Matrix
+    private inner class FrameBufferCompat(
+        private val content: Picture,
+        private val transform: Matrix
     ) {
+        private val renderedFrame = if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
+            // First draw content and then transform the whole [renderedFrame] at once.
+            // Somehow drawing with a transformed canvas [Canvas.withMatrix] causes artifacts on
+            // some devices (E.g. Pixel 3XL on Android Q). This adds 1.8ms (Pixel 4a, suburban
+            // map, 1024x1024) and thereby doubles the time spent in [renderFrame] though.
+            Bitmap.createBitmap(
+                content.width,
+                content.height,
+                Bitmap.Config.ARGB_8888
+            ).apply {
+                content.draw(Canvas(this))
+            }
+        } else {
+            null
+        }
+
         fun recycle() {
-            frame.recycle()
+            renderedFrame?.recycle()
+        }
+
+        fun draw(canvas: Canvas) {
+            if (renderedFrame != null) {
+                canvas.drawBitmap(renderedFrame, transform, antiAliasingPaint)
+            } else {
+                canvas.withMatrix(transform) {
+                    content.draw(this)
+                }
+            }
         }
     }
 
     /** Next frame to render, or {@code null} if the data has not changed */
     // @MainThread
-    private var nextFrame: FrameBuffer? = null
+    private var nextFrame: FrameBufferCompat? = null
 
     /**
      * Job rendering frame
@@ -231,7 +258,7 @@ class MapView(
 
     /** Frame that was last drawn */
     // @MainThread
-    private var lastDrawnFrame: FrameBuffer? = null
+    private var lastDrawnFrame: FrameBufferCompat? = null
 
     /** Cached value of absolute coordinates of [center] */
     private var centerAbsolute = AbsoluteCoordinates(0, 0)
@@ -457,9 +484,6 @@ class MapView(
      * @see animateToLocation
      */
     var maxFps = MAX_FPS
-        set(value) {
-            field = min(MAX_FPS, value)
-        }
 
     /** [center] and [location]. Set as pair to keep it in sync. This is usually changed via [animateToLocation]. */
     @VisibleForTesting
@@ -578,7 +602,10 @@ class MapView(
                     val dragStart = move.map { (dragPointer, _) -> dragPointer }
                     val dragNow = move.map { (_, dragNow) -> dragNow }
 
-                    val dragNowNoScale = if (dragNow.size == 1) {
+                    val dragNowNoScale = if (dragNow.size < 2 || dragStart.size < 2
+                        || (dragNow[0].distanceTo(dragNow[1]) == 0.0)
+                        || (dragStart[0].distanceTo(dragStart[1]) == 0.0)
+                    ) {
                         dragNow
                     } else {
                         val centerDrag = AbsoluteCoordinates(
@@ -669,8 +696,6 @@ class MapView(
                                 }
                             }
 
-                            ignoreAnimationDurationsUntil =
-                                SystemClock.elapsedRealtime() + ANIMATION_DURATION_AFTER_DRAGGED_CENTER
                             location?.let { location ->
                                 animateToLocation(
                                     location,
@@ -679,6 +704,9 @@ class MapView(
                                     animate = true
                                 )
                             }
+                            // Don't let any regular [animateToLocation] interrupt the smooth transition back to [location].
+                            ignoreAnimationDurationsUntil =
+                                (SystemClock.elapsedRealtime() + (ANIMATION_DURATION_AFTER_DRAGGED_CENTER * 1.1)).toLong()
                         }
                 }
             }
@@ -821,8 +849,9 @@ class MapView(
         animate: Boolean = false,
         setCenterInsteadOfLocation: Boolean = false
     ) {
-        val adjustedAnimationDuration =
-            max(ignoreAnimationDurationsUntil - SystemClock.elapsedRealtime(), animationDuration)
+        if (animate && ignoreAnimationDurationsUntil >= SystemClock.elapsedRealtime()) {
+            return
+        }
 
         if (animate && location != null && center != null) {
             // Not supported
@@ -869,11 +898,20 @@ class MapView(
                 val minFpsForRotation =
                     max(abs(locationAnim.rotation * 8), abs(centerAnim.rotation * 8))
 
+                // Don't render more frames that the CPU can provide.
+                val maxFpsForCpu = renderFrameTimes.avg.let { avgRenderTime ->
+                    if (avgRenderTime == 0) {
+                        MAX_FPS
+                    } else {
+                        max(MIN_FPS, min(min(maxFps, MAX_FPS), 1000 / avgRenderTime))
+                    }
+                }
+
                 val totalFrames = max(
                     1, min(
-                        maxFps,
+                        maxFpsForCpu,
                         ceil(max(minFpsForMovement, minFpsForRotation)).toInt()
-                    ) * adjustedAnimationDuration / 1000
+                    ) * animationDuration / 1000
                 )
 
                 val startTime = SystemClock.elapsedRealtime()
@@ -885,7 +923,7 @@ class MapView(
                         for (i in 1..totalFrames) {
                             if (isActive) {
                                 val elapsed = SystemClock.elapsedRealtime() - startTime
-                                val desiredElapsed = i * (adjustedAnimationDuration / totalFrames)
+                                val desiredElapsed = i * (animationDuration / totalFrames)
                                 delay(max(0, desiredElapsed - elapsed))
 
                                 if (centerAndLocationUpdater?.isCompleted == false) {
@@ -1191,8 +1229,75 @@ class MapView(
     private fun PointF.toMap(tiltAndRotate: Matrix = getTiltAndRotateTransformation()) =
         screenToMapCoordinates(arrayOf(this), tiltAndRotate)[0]
 
+    private inner class Histogram(val tag: String) {
+        private val hits = if (DebugLog.isEnabled) {
+            IntArray(100)
+        } else {
+            null
+        }
+        private var numEntries = 0
+        private var acc = 0L
+
+        /** Average value of data point. */
+        var avg = 1000 / MAX_FPS
+
+        /** Add a new data point. */
+        fun add(durationMs: Long) {
+            if (numEntries == 100) {
+                print()
+                reset()
+            }
+
+            numEntries++
+            acc += durationMs
+
+            hits?.let { hits ->
+                val bucket = if (durationMs >= 100) {
+                    99
+                } else if (durationMs < 0) {
+                    0
+                } else {
+                    durationMs.toInt()
+                }
+                hits[bucket] = hits[bucket] + 1
+            }
+        }
+
+        private fun print() {
+            if (numEntries > 0) {
+                hits?.let { hits ->
+                    DebugLog.i(
+                        TAG,
+                        "$tag: avg=${acc / numEntries} ${
+                            hits.indices.map { i -> "${hits[i]}" }.fold("") { a, s -> "$a $s" }
+                        }"
+                    )
+                }
+            }
+        }
+
+        private fun reset() {
+            avg = if (numEntries == 0) {
+                avg
+            } else {
+                (acc / numEntries).toInt()
+            }
+
+            numEntries = 0
+            acc = 0L
+
+            hits?.let { hits ->
+                hits.indices.forEach { i -> hits[i] = 0 }
+            }
+        }
+    }
+
+    private val renderFrameTimes = Histogram("renderFrame")
+
     @VisibleForTesting
     suspend fun renderFrame() {
+        val startTimeMs = System.currentTimeMillis()
+
         // Copy all view state on the main thread into "input"
         class RenderInput(
             val width: Int,
@@ -1237,21 +1342,13 @@ class MapView(
                 ), input.tiltAndRotate
             )
 
-            // First draw ways on untransformed map and the transform the whole map at once. Somehow
-            // drawing with a transformed canvas [Canvas.withMatrix] causes artifacts on some
-            // devices (E.g. Pixel 3XL on Android Q). This adds 1.8ms (Pixel 4a, suburban map,
-            // 1024x1024) and thereby doubles the time spent in [onDrawForeground] though.
             val minX = screenEdges.minOf { it.x }
             val minY = screenEdges.minOf { it.y }
             val unTransformedMapWidth = ceil(screenEdges.maxOf { it.x } - minX).toInt()
             val unTransformedMapHeight = ceil(screenEdges.maxOf { it.y } - minY).toInt()
 
-            val unTransformedMap = Bitmap.createBitmap(
-                unTransformedMapWidth,
-                unTransformedMapHeight,
-                Bitmap.Config.ARGB_8888
-            )
-            unTransformedMap.applyCanvas {
+            val unTransformedMap = Picture()
+            unTransformedMap.beginRecording(unTransformedMapWidth, unTransformedMapHeight).apply {
                 // Reusing a single MapCoordinates class is saving allocations and shows to be
                 // much cheaper
                 fun MapCoordinates.setFromNode(node: Node) {
@@ -1308,8 +1405,7 @@ class MapView(
                 input.clipArea?.let { clip ->
                     val clipPath = Path()
 
-                    val start =
-                        BasicLocation(clip.minLatD, clip.minLonD).toMap()
+                    val start = BasicLocation(clip.minLatD, clip.minLonD).toMap()
                     clipPath.moveTo(start.x, start.y)
 
                     fun Path.lineTo(lat: Double, lon: Double) {
@@ -1469,11 +1565,14 @@ class MapView(
                     }
                 }
             }
+            unTransformedMap.endRecording()
 
             // Bitmaps cannot have negative coordinates, hence we drew the image slightly
             // offset; correct for that
             val tiltAndRotateAndShift = input.tiltAndRotate
             tiltAndRotateAndShift.preTranslate(minX, minY)
+
+            val newFrame = FrameBufferCompat(unTransformedMap, tiltAndRotateAndShift)
 
             withContext(Main.immediate) {
                 if (lastDrawnFrame != null && lastDrawnFrame != nextFrame) {
@@ -1482,17 +1581,17 @@ class MapView(
                 }
 
                 nextFrame?.recycle()
-                nextFrame = FrameBuffer(unTransformedMap, tiltAndRotateAndShift)
+                nextFrame = newFrame
                 invalidate()
             }
         }
+        val now = System.currentTimeMillis()
+
+        renderFrameTimes.add(now - startTimeMs)
     }
 
     override fun onDrawForeground(canvas: Canvas) {
-        nextFrame?.let { nextFrame ->
-            // Tilt and rotate the frame to create a 3D effect
-            canvas.drawBitmap(nextFrame.frame, nextFrame.transform, antiAliasingPaint)
-        }
+        nextFrame?.draw(canvas)
         lastDrawnFrame = nextFrame
     }
 
@@ -1572,7 +1671,7 @@ class MapView(
             return (this - other).length
         }
 
-        fun toFloatArray(): FloatArray {
+        private fun toFloatArray(): FloatArray {
             return floatArrayOf(x.toFloat(), y.toFloat())
         }
 

@@ -24,8 +24,10 @@ import android.util.Log
 @Suppress("KotlinConstantConditions")
 class DebugLog {
     companion object {
+        const val isEnabled = BuildConfig.BUILD_TYPE != "release"
+
         fun v(tag: String, message: String, exception: Throwable? = null) {
-            if (BuildConfig.BUILD_TYPE != "release") {
+            if (isEnabled) {
                 if (exception == null) {
                     Log.v(tag, message)
                 } else {
@@ -35,7 +37,7 @@ class DebugLog {
         }
 
         fun d(tag: String, message: String, exception: Throwable? = null) {
-            if (BuildConfig.BUILD_TYPE != "release") {
+            if (isEnabled) {
                 if (exception == null) {
                     Log.d(tag, message)
                 } else {
@@ -45,7 +47,7 @@ class DebugLog {
         }
 
         fun i(tag: String, message: String, exception: Throwable? = null) {
-            if (BuildConfig.BUILD_TYPE != "release") {
+            if (isEnabled) {
                 if (exception == null) {
                     Log.i(tag, message)
                 } else {
@@ -55,7 +57,7 @@ class DebugLog {
         }
 
         fun w(tag: String, message: String, exception: Throwable? = null) {
-            if (BuildConfig.BUILD_TYPE != "release") {
+            if (isEnabled) {
                 if (exception == null) {
                     Log.w(tag, message)
                 } else {
@@ -65,7 +67,7 @@ class DebugLog {
         }
 
         fun e(tag: String, message: String, exception: Throwable? = null) {
-            if (BuildConfig.BUILD_TYPE != "release") {
+            if (isEnabled) {
                 if (exception == null) {
                     Log.e(tag, message)
                 } else {
