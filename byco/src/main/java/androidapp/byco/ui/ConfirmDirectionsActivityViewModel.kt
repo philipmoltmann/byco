@@ -131,7 +131,7 @@ class ConfirmDirectionsActivityViewModel(
                         start,
                         goal,
                         providedCountryCode = LocationRepository[app].countryCode.value!!
-                    ).flowOn(Default)
+                    )
                 }
             }.stateIn(null)
 

@@ -49,6 +49,7 @@ import androidapp.byco.util.SingleParameterSingletonOf
 import androidapp.byco.util.areBicyclesAllowedByDefault
 import androidapp.byco.util.plus
 import androidapp.byco.util.stateIn
+import kotlinx.coroutines.Dispatchers.Default
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
@@ -56,6 +57,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeout
 import lib.gpx.BasicLocation
@@ -69,7 +71,7 @@ import java.util.PriorityQueue
 import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.math.pow
 
-private val MAP_TILE_MULT = 10.0.pow(MapDataRepository.TILE_SCALE)
+private val MAP_TILE_MULT = 10.0.pow(MapDataRepository.TILE_SCALE) * 0.25
 private val MAP_TILE_SIZE = 1 / MAP_TILE_MULT
 
 // Representation of a tile without the overhead of BigDecimals
@@ -291,12 +293,12 @@ class RouteFinderRepository internal constructor(
 
         /** Estimate the travel effort from a [Node] to an [other] node */
         fun Node.estTo(other: Node): Float {
-            // WARNING: This is not quite right.
-            // This basically assumes that there never is a 100% straight, perfect path to the
-            // goal. If a node has a 100% straight and perfect path to goal it might not be
-            // preferred. On the other hand this reduces the number of tiles searched
-            // significantly.
-            return distanceTo(other) * 1.55f
+            // By over-estimating the distance we can save time investigating very unlikely routes
+            // as almost always there is some kind in the route between two points. Setting a factor
+            // of 1.55 seems to save about 25% of runtime.
+            //
+            // But for now optimize for quality.
+            return distanceTo(other)
         }
 
         // Find nodes close to start
@@ -644,7 +646,7 @@ class RouteFinderRepository internal constructor(
 
         // Cannot find route
         emit(emptyList())
-    }
+    }.flowOn(Default)
 
     companion object :
         SingleParameterSingletonOf<BycoApplication, RouteFinderRepository>({
