@@ -27,6 +27,12 @@ android {
         targetSdk target_sdk
     }
 
+    testOptions {
+        unitTests.all {
+            jvmArgs '-noverify'
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled true
@@ -80,4 +86,5 @@ dependencies {
     testImplementation 'io.mockk:mockk:1.13.10'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.12'
+    testImplementation 'androidx.test.ext:truth:1.5.0'
 }

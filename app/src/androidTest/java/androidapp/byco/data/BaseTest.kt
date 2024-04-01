@@ -16,12 +16,23 @@
 
 package androidapp.byco.data
 
-import android.app.Application
+import androidapp.byco.BycoApplication
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import org.junit.After
 
 open class BaseTest {
+    val testScope = CoroutineScope(Job())
+
+    @After
+    fun cancelTestCoroutines() {
+        testScope.cancel()
+    }
+
     companion object {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val app = context.applicationContext as Application
+        val app = context.applicationContext as BycoApplication
     }
 }

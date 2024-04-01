@@ -16,21 +16,16 @@
 
 package lib.gpx
 
-import com.google.common.truth.DoubleSubject
+import androidx.test.ext.truth.location.LocationSubject.assertThat
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import kotlin.math.abs
 
 @RunWith(RobolectricTestRunner::class)
 @Config(minSdk = 28, maxSdk = 28)
 class BasicTest {
-    private fun DoubleSubject.isWithinPctOf(pct: Double, expected: Double) {
-        isWithin(abs(pct * expected)).of(expected)
-    }
-
     @Test
     fun bearingToNorth() {
         val a = BasicLocation(5.0, -2.0)
@@ -74,7 +69,11 @@ class BasicTest {
         val fresno = BasicLocation(36.734603, -119.765577)
 
         val crossTrackFresnoSFToLA = fresno.closestNodeOn(sf, la)
-        assertThat(crossTrackFresnoSFToLA.latitude).isWithinPctOf(0.01, 36.18)
-        assertThat(crossTrackFresnoSFToLA.longitude).isWithinPctOf(0.01, -120.52)
+        assertThat(crossTrackFresnoSFToLA.toLocation()).isNearby(
+            BasicLocation(
+                36.18,
+                -120.52
+            ).toLocation(), 500f
+        )
     }
 }

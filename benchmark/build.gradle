@@ -17,14 +17,11 @@ android {
     }
 
     defaultConfig {
-        testInstrumentationRunnerArguments enable: 'true', suppressErrors: 'DEBUGGABLE', mode: 'sampled'
+        testInstrumentationRunnerArguments enable: 'true', 'androidx.benchmark.suppressErrors': 'EMULATOR,UNLOCKED,DEBUGGABLE', mode: 'sampled'
         minSdk 23
         targetSdk target_sdk
 
         testInstrumentationRunner 'androidx.benchmark.junit4.AndroidBenchmarkRunner'
-
-
-        // Enable method sampling
     }
 
     testBuildType = "release"

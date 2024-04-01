@@ -19,6 +19,7 @@ package androidapp.byco.views
 import android.location.Location
 import androidapp.byco.ui.views.MapView
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.truth.location.LocationSubject.assertThat
 import com.google.common.truth.Truth.assertThat
 import io.mockk.every
 import io.mockk.mockk
@@ -61,14 +62,13 @@ class MapViewTest {
             val absolute = location.toAbsolute()
             val doubleTransformed = absolute.toLocation()
 
-            assertThat(doubleTransformed.latitude).isWithin(0.0001).of(location.latitude)
-            assertThat(doubleTransformed.longitude).isWithin(0.0001).of(location.longitude)
+            assertThat(doubleTransformed.toLocation()).isNearby(location, 10f)
         }
     }
 
     @Test
     fun absoluteToLocationAndBack() {
-        val absolute = MapView.AbsoluteCoordinates( 500.0,  700.0)
+        val absolute = MapView.AbsoluteCoordinates(500.0, 700.0)
 
         mapView.apply {
             val location = absolute.toLocation()
@@ -90,14 +90,13 @@ class MapViewTest {
             val map = location.toMap()
             val doubleTransformed = map.toLocation()
 
-            assertThat(doubleTransformed.latitude).isWithin(0.0001).of(location.latitude)
-            assertThat(doubleTransformed.longitude).isWithin(0.0001).of(location.longitude)
+            assertThat(doubleTransformed.toLocation()).isNearby(location, 10f)
         }
     }
 
     @Test
     fun mapXYToLatLonAndBack() {
-        val map = MapView.MapCoordinates( 500.0,  700.0)
+        val map = MapView.MapCoordinates(500.0, 700.0)
 
         mapView.apply {
             val location = map.toLocation()

@@ -26,6 +26,8 @@ import android.os.Looper
 import android.os.SystemClock
 import androidapp.byco.BycoApplication
 import androidapp.byco.util.*
+import androidx.annotation.VisibleForTesting
+import androidx.annotation.VisibleForTesting.Companion.PACKAGE_PRIVATE
 import com.google.android.gms.location.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -45,8 +47,12 @@ import kotlin.math.abs
 
 /** Location related state */
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
-class LocationRepository internal constructor(
+@VisibleForTesting(otherwise = PACKAGE_PRIVATE)
+class LocationRepository(
     private val app: BycoApplication,
+    private val fusedLocationClient: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(
+        app
+    ),
     private val LOCATION_UPDATE_INTERVAL: Long = 1000L, // ms
     private val MOVING_ACCURACY_REQUIRED: Float = 20F, // m
     private val SPEED_TO_STOP_MOVING: Float = 0.9F, // m/s (== 3 km/h)
@@ -141,8 +147,6 @@ class LocationRepository internal constructor(
             flowOf(null)
         } else {
             callbackFlow<Location> {
-                val fusedLocationClient = LocationServices.getFusedLocationProviderClient(app)
-
                 val callback = object : LocationCallback() {
                     override fun onLocationResult(location: LocationResult) {
                         val lastLocation = location.lastLocation ?: return

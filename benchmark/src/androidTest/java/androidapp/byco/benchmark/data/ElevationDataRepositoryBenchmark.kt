@@ -16,16 +16,14 @@
 
 package androidapp.byco.benchmark.data
 
-import android.app.Application
+import androidapp.byco.BycoApplication
 import androidapp.byco.data.ElevationDataRepository
 import androidapp.byco.data.MapDataRepository
 import androidapp.byco.data.Node
-import androidapp.byco.util.observeAsChannel
 import androidx.benchmark.junit4.BenchmarkRule
 import androidx.benchmark.junit4.measureRepeated
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.Dispatchers.Main
-import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -44,7 +42,7 @@ class ElevationDataRepositoryBenchmark {
     val benchmarkRule = BenchmarkRule()
 
     private val app =
-        InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
+        InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as BycoApplication
     private val diridonStation = Node(-1, 37.334790, -121.888140)
     private val tileMult = BigDecimal.TEN.pow(ElevationDataRepository.TILE_SCALE)
     private val tileSize = BigDecimal.ONE.divide(tileMult)
@@ -63,7 +61,7 @@ class ElevationDataRepositoryBenchmark {
 
         // Make sure data is cached on disk
         runBlocking {
-            repo.getElevationDataTile(minLat to minLon).observeAsChannel().consumeAsFlow().first()
+            repo.getElevationDataTile(minLat to minLon).first()
         }
     }
 
@@ -87,7 +85,7 @@ class ElevationDataRepositoryBenchmark {
 
         benchmarkRule.measureRepeated {
             runBlocking {
-                repo.getElevationData(largerArea).observeAsChannel().consumeAsFlow().first()
+                repo.getElevationData(largerArea).first()
             }
         }
     }
@@ -100,7 +98,7 @@ class ElevationDataRepositoryBenchmark {
 
         benchmarkRule.measureRepeated {
             runBlocking {
-                repo.getElevationData(mapArea).observeAsChannel().consumeAsFlow().first()
+                repo.getElevationData(mapArea).first()
             }
         }
     }
@@ -113,12 +111,12 @@ class ElevationDataRepositoryBenchmark {
 
         // Make sure data is cached in memory
         runBlocking {
-            repo.getElevationDataTile(minLat to minLon).observeAsChannel().consumeAsFlow().first()
+            repo.getElevationDataTile(minLat to minLon).first()
         }
 
         benchmarkRule.measureRepeated {
             runBlocking {
-                repo.getElevationDataTile(minLat to minLon).observeAsChannel().consumeAsFlow()
+                repo.getElevationDataTile(minLat to minLon)
                     .first()
             }
         }
@@ -132,12 +130,12 @@ class ElevationDataRepositoryBenchmark {
 
         // Make sure data is cached in memory
         runBlocking {
-            repo.getElevationDataTile(minLat to minLon).observeAsChannel().consumeAsFlow().first()
+            repo.getElevationDataTile(minLat to minLon).first()
         }
 
         benchmarkRule.measureRepeated {
             runBlocking {
-                repo.getElevationDataTile(minLat to minLon).observeAsChannel().consumeAsFlow()
+                repo.getElevationDataTile(minLat to minLon)
                     .first()
             }
         }

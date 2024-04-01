@@ -16,30 +16,179 @@
 
 package androidapp.byco.data
 
+import android.app.PendingIntent
 import android.location.Location
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import androidapp.byco.ui.RidingActivity
 import androidx.test.ext.junit.rules.activityScenarioRule
-import com.google.android.gms.location.LocationServices
-import org.junit.After
+import androidx.test.rule.GrantPermissionRule
+import com.google.android.gms.common.api.Api
+import com.google.android.gms.common.api.internal.ApiKey
+import com.google.android.gms.location.CurrentLocationRequest
+import com.google.android.gms.location.DeviceOrientationListener
+import com.google.android.gms.location.DeviceOrientationRequest
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LastLocationRequest
+import com.google.android.gms.location.LocationAvailability
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationListener
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.tasks.CancellationToken
+import com.google.android.gms.tasks.Task
+import com.google.android.gms.tasks.Tasks
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Rule
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
 
-open class BaseLocationTest : BaseCoroutineTest() {
+open class BaseLocationTest : BaseTest() {
     @get:Rule
     val activity = activityScenarioRule<RidingActivity>()
 
-    private val fusedLocationProviderClient =
-        LocationServices.getFusedLocationProviderClient(context)
+    @get:Rule
+    val grantPermission =
+        GrantPermissionRule.grant(android.Manifest.permission.ACCESS_FINE_LOCATION)
+
+    private val testLocations = MutableStateFlow<Location?>(null)
+    private val testLocationListeners = mutableListOf<Pair<Looper, LocationCallback>>()
+    private val testLocationClient = object : FusedLocationProviderClient {
+        override fun getApiKey(): ApiKey<Api.ApiOptions.NoOptions> {
+            TODO("Not yet implemented")
+        }
+
+        override fun getLastLocation(): Task<Location> {
+            return Tasks.call(Executors.newSingleThreadExecutor()) {
+                runBlocking {
+                    testLocations.filterNotNull().first()
+                }
+            }
+        }
+
+        override fun getLastLocation(p0: LastLocationRequest): Task<Location> {
+            TODO("Not yet implemented")
+        }
+
+        override fun getCurrentLocation(p0: Int, p1: CancellationToken?): Task<Location> {
+            TODO("Not yet implemented")
+        }
+
+        override fun getCurrentLocation(
+            p0: CurrentLocationRequest,
+            p1: CancellationToken?
+        ): Task<Location> {
+            TODO("Not yet implemented")
+        }
+
+        override fun getLocationAvailability(): Task<LocationAvailability> {
+            TODO("Not yet implemented")
+        }
+
+        override fun requestLocationUpdates(
+            p0: LocationRequest,
+            p1: Executor,
+            p2: LocationListener
+        ): Task<Void> {
+            TODO("Not yet implemented")
+        }
+
+        override fun requestLocationUpdates(
+            p0: LocationRequest,
+            p1: LocationListener,
+            p2: Looper?
+        ): Task<Void> {
+            TODO("Not yet implemented")
+        }
+
+        override fun requestLocationUpdates(
+            p0: LocationRequest,
+            p1: LocationCallback,
+            p2: Looper?
+        ): Task<Void> {
+            testLocationListeners.add(p2!! to p1)
+            return Tasks.forResult(null)
+        }
+
+        override fun requestLocationUpdates(
+            p0: LocationRequest,
+            p1: Executor,
+            p2: LocationCallback
+        ): Task<Void> {
+            TODO("Not yet implemented")
+        }
+
+        override fun requestLocationUpdates(p0: LocationRequest, p1: PendingIntent): Task<Void> {
+            TODO("Not yet implemented")
+        }
+
+        override fun removeLocationUpdates(p0: LocationListener): Task<Void> {
+            TODO("Not yet implemented")
+        }
+
+        override fun removeLocationUpdates(p0: LocationCallback): Task<Void> {
+            testLocationListeners.removeIf { it.second == p0 }
+            return Tasks.forResult(null)
+        }
+
+        override fun removeLocationUpdates(p0: PendingIntent): Task<Void> {
+            TODO("Not yet implemented")
+        }
+
+        override fun flushLocations(): Task<Void> {
+            TODO("Not yet implemented")
+        }
+
+        override fun setMockMode(p0: Boolean): Task<Void> {
+            TODO("Not yet implemented")
+        }
+
+        override fun setMockLocation(p0: Location): Task<Void> {
+            TODO("Not yet implemented")
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun requestDeviceOrientationUpdates(
+            p0: DeviceOrientationRequest,
+            p1: Executor,
+            p2: DeviceOrientationListener
+        ): Task<Void> {
+            TODO("Not yet implemented")
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun requestDeviceOrientationUpdates(
+            p0: DeviceOrientationRequest,
+            p1: DeviceOrientationListener,
+            p2: Looper?
+        ): Task<Void> {
+            TODO("Not yet implemented")
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun removeDeviceOrientationUpdates(p0: DeviceOrientationListener): Task<Void> {
+            TODO("Not yet implemented")
+        }
+    }
+    val locationRepo = LocationRepository(app, testLocationClient)
 
     @Before
-    fun enableMockLocations() {
-        fusedLocationProviderClient.setMockMode(true)
-    }
-
-    @After
-    fun disableMockLocations() {
-        fusedLocationProviderClient.setMockMode(false)
+    fun sendTestLocationsToLocationClient() {
+        testScope.launch {
+            testLocations.filterNotNull().collect { loc ->
+                testLocationListeners.forEach {
+                    Handler(it.first).post {
+                        it.second.onLocationResult(LocationResult.create(listOf(loc)))
+                    }
+                }
+            }
+        }
     }
 
     fun setTestLocation(
@@ -53,7 +202,7 @@ open class BaseLocationTest : BaseCoroutineTest() {
         speed: Float = 0F,
         speedAccuracyMetersPerSecond: Float = 0f
     ) {
-        LocationServices.getFusedLocationProviderClient(app).setMockLocation(
+        testLocations.tryEmit(
             Location("test").also {
                 it.latitude = latitude
                 it.longitude = longitude

@@ -16,17 +16,15 @@
 
 package androidapp.byco.benchmark.data
 
-import android.app.Application
+import androidapp.byco.BycoApplication
 import androidapp.byco.data.ElevationData
 import androidapp.byco.data.ElevationDataRepository
 import androidapp.byco.data.MapDataRepository
 import androidapp.byco.data.Node
-import androidapp.byco.util.observeAsChannel
 import androidx.benchmark.junit4.BenchmarkRule
 import androidx.benchmark.junit4.measureRepeated
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.Dispatchers.Main
-import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -44,7 +42,7 @@ class ElevationDataBenchmark {
     val benchmarkRule = BenchmarkRule()
 
     private val app =
-        InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
+        InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as BycoApplication
     private val diridonStation = Node(-1, 37.334790, -121.888140)
     private val tileMult = BigDecimal.TEN.pow(ElevationDataRepository.TILE_SCALE)
     private val tileSize = BigDecimal.ONE.divide(tileMult)
@@ -62,8 +60,8 @@ class ElevationDataBenchmark {
         }
 
         val tile1 = runBlocking {
-            repo.getElevationData(mapArea).observeAsChannel().consumeAsFlow().first()
-        }
+            repo.getElevationData(mapArea).first()
+        }!!
 
         val tile2 = runBlocking {
             repo.getElevationData(
@@ -73,8 +71,8 @@ class ElevationDataBenchmark {
                     mapArea.maxLat + tileSize,
                     mapArea.maxLon
                 )
-            ).observeAsChannel().consumeAsFlow().first()
-        }
+            ).first()
+        }!!
 
         benchmarkRule.measureRepeated {
             runBlocking {
@@ -90,8 +88,8 @@ class ElevationDataBenchmark {
         }
 
         val tile1 = runBlocking {
-            repo.getElevationData(mapArea).observeAsChannel().consumeAsFlow().first()
-        }
+            repo.getElevationData(mapArea).first()
+        }!!
 
         val tile2 = runBlocking {
             repo.getElevationData(
@@ -101,8 +99,8 @@ class ElevationDataBenchmark {
                     mapArea.maxLat,
                     mapArea.maxLon + tileSize
                 )
-            ).observeAsChannel().consumeAsFlow().first()
-        }
+            ).first()
+        }!!
 
         benchmarkRule.measureRepeated {
             runBlocking {
@@ -118,8 +116,8 @@ class ElevationDataBenchmark {
         }
 
         val tile1 = runBlocking {
-            repo.getElevationData(mapArea).observeAsChannel().consumeAsFlow().first()
-        }
+            repo.getElevationData(mapArea).first()
+        }!!
 
         val tile2 = runBlocking {
             repo.getElevationData(
@@ -129,8 +127,8 @@ class ElevationDataBenchmark {
                     mapArea.maxLat + tileSize,
                     mapArea.maxLon
                 )
-            ).observeAsChannel().consumeAsFlow().first()
-        }
+            ).first()
+        }!!
         val tile2WithDifferentOffset = ElevationData(
             tile2.area,
             tile2.latOffset + 0.000001,
@@ -153,8 +151,8 @@ class ElevationDataBenchmark {
         }
 
         val tile1 = runBlocking {
-            repo.getElevationData(mapArea).observeAsChannel().consumeAsFlow().first()
-        }
+            repo.getElevationData(mapArea).first()
+        }!!
 
         val tile2 = runBlocking {
             repo.getElevationData(
@@ -164,8 +162,8 @@ class ElevationDataBenchmark {
                     mapArea.maxLat,
                     mapArea.maxLon + tileSize
                 )
-            ).observeAsChannel().consumeAsFlow().first()
-        }
+            ).first()
+        }!!
         val tile2WithDifferentOffset = ElevationData(
             tile2.area,
             tile2.latOffset + 0.000001,

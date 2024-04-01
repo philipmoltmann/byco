@@ -13,17 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- 
+
 package androidapp.byco.benchmark.data
 
-import android.app.Application
+import androidapp.byco.BycoApplication
 import androidapp.byco.data.MapDataRepository
 import androidapp.byco.data.Node
-import androidapp.byco.util.observeAsChannel
 import androidx.benchmark.junit4.BenchmarkRule
 import androidx.benchmark.junit4.measureRepeated
 import androidx.test.platform.app.InstrumentationRegistry
-import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import lib.gpx.MapArea
@@ -41,7 +39,7 @@ class MapDataRepositoryBenchmark {
     val benchmarkRule = BenchmarkRule()
 
     private val app =
-        InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
+        InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as BycoApplication
     private val diridonStation = Node(-1, 37.334790, -121.888140)
     private val tileMult = BigDecimal.TEN.pow(MapDataRepository.TILE_SCALE)
     private val tileSize = BigDecimal.ONE.divide(tileMult)
@@ -58,7 +56,7 @@ class MapDataRepositoryBenchmark {
 
         // Make sure data is cached on disk
         runBlocking {
-            repo.getMapDataTile(minLat to minLon).observeAsChannel().consumeAsFlow().first()
+            repo.getMapDataTile(minLat to minLon).first()
         }
     }
 
@@ -75,7 +73,7 @@ class MapDataRepositoryBenchmark {
 
         benchmarkRule.measureRepeated {
             runBlocking {
-                repo.getMapData(largerArea).observeAsChannel().consumeAsFlow().first()
+                repo.getMapData(largerArea).first()
             }
         }
     }
@@ -86,7 +84,7 @@ class MapDataRepositoryBenchmark {
 
         benchmarkRule.measureRepeated {
             runBlocking {
-                repo.getMapData(mapArea).observeAsChannel().consumeAsFlow().first()
+                repo.getMapData(mapArea).first()
             }
         }
     }
@@ -97,12 +95,12 @@ class MapDataRepositoryBenchmark {
 
         // Make sure data is cached on disk
         runBlocking {
-            repo.getMapDataTile(minLat to minLon).observeAsChannel().consumeAsFlow().first()
+            repo.getMapDataTile(minLat to minLon).first()
         }
 
         benchmarkRule.measureRepeated {
             runBlocking {
-                repo.getMapDataTile(minLat to minLon).observeAsChannel().consumeAsFlow().first()
+                repo.getMapDataTile(minLat to minLon).first()
             }
         }
     }
@@ -113,12 +111,12 @@ class MapDataRepositoryBenchmark {
 
         // Make sure data is cached in memory
         runBlocking {
-            repo.getMapDataTile(minLat to minLon).observeAsChannel().consumeAsFlow().first()
+            repo.getMapDataTile(minLat to minLon).first()
         }
 
         benchmarkRule.measureRepeated {
             runBlocking {
-                repo.getMapDataTile(minLat to minLon).observeAsChannel().consumeAsFlow().first()
+                repo.getMapDataTile(minLat to minLon).first()
             }
         }
     }

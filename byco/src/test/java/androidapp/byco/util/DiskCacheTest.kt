@@ -42,21 +42,25 @@ class DiskCacheTest {
     private val testScope = CoroutineScope(Job())
     private val cacheLocation = File("testData", "cache")
 
-    private val retreiver: suspend CoroutineScope.(Int) -> Long = spyk({ 23 })
-    private val writer: suspend CoroutineScope.(OutputStream, Int, Long) -> Unit = {
-        out, key, value ->
+    private val retreiver: suspend CoroutineScope.(Int) -> Long = spyk()
+    private val writer: suspend CoroutineScope.(OutputStream, Int, Long) -> Unit =
+        { out, key, value ->
             DataOutputStream(out).use {
                 it.writeInt(key)
                 it.writeLong(value)
             }
-    }
-    private val reader: suspend CoroutineScope.(InputStream) -> (Pair<Int, Long>) = {
-        ins ->
+        }
+    private val reader: suspend CoroutineScope.(InputStream) -> (Pair<Int, Long>) = { ins ->
         DataInputStream(ins).use {
             it.readInt() to it.readLong()
         }
     }
     private val cache = diskCacheOf(cacheLocation, 100000, retreiver, writer, reader)
+
+    @Before
+    fun setUpRetreiver() {
+        coEvery { retreiver(any(), any()) } returns 23
+    }
 
     @Before
     @After
@@ -75,14 +79,14 @@ class DiskCacheTest {
             val cachedVal = cache.get(1)
 
             assertThat(cache.get(1)).isEqualTo(cachedVal)
-            coVerify(exactly = 1) { retreiver.invoke(any(), 1) }
+            coVerify(exactly = 1) { retreiver(any(), 1) }
         }
     }
 
     @Test
     fun newValueGetsReturned() {
         runBlocking {
-            coEvery { retreiver.invoke(any(), 1) }.returns(42)
+            coEvery { retreiver(any(), 1) } returns 42
             assertThat(cache.get(1)).isEqualTo(42)
         }
     }
@@ -91,7 +95,7 @@ class DiskCacheTest {
     fun newValueGetsResolved() {
         runBlocking {
             cache.get(1)
-            coVerify { retreiver.invoke(any(), 1) }
+            coVerify { retreiver(any(), 1) }
         }
     }
 
@@ -100,10 +104,10 @@ class DiskCacheTest {
         runBlocking {
             cache.get(1)
 
-            coEvery { retreiver.invoke(any(), 2) }.returns(42)
+            coEvery { retreiver(any(), 2) } returns 42
 
             assertThat(cache.get(2)).isEqualTo(42)
-            coVerify { retreiver.invoke(any(), 2) }
+            coVerify { retreiver(any(), 2) }
         }
     }
 
@@ -123,16 +127,15 @@ class DiskCacheTest {
             }
         }
 
-        val retreiver: suspend CoroutineScope.(Key) -> Long = spyk({ it.key.toLong() })
-        val writer: suspend CoroutineScope.(OutputStream, Key, Long) -> Unit = {
-                out, key, value ->
+        val retreiver: suspend CoroutineScope.(Key) -> Long = spyk()
+        coEvery { retreiver(any(), any()) } returns 23
+        val writer: suspend CoroutineScope.(OutputStream, Key, Long) -> Unit = { out, key, value ->
             DataOutputStream(out).use {
                 it.writeInt(key.key)
                 it.writeLong(value)
             }
         }
-        val reader: suspend CoroutineScope.(InputStream) -> (Pair<Key, Long>) = {
-                ins ->
+        val reader: suspend CoroutineScope.(InputStream) -> (Pair<Key, Long>) = { ins ->
             DataInputStream(ins).use {
                 Key(it.readInt()) to it.readLong()
             }
@@ -143,10 +146,10 @@ class DiskCacheTest {
         runBlocking {
             cache.get(Key(1))
 
-            coEvery { retreiver.invoke(any(), key2) }.returns(42)
+            coEvery { retreiver(any(), key2) } returns 42
 
             assertThat(cache.get(key2)).isEqualTo(42)
-            coVerify { retreiver.invoke(any(), key2) }
+            coVerify { retreiver(any(), key2) }
         }
     }
 
@@ -157,10 +160,10 @@ class DiskCacheTest {
 
             cache.clear()
             clearAllMocks()
-            coEvery { retreiver.invoke(any(), 1) }.returns(42)
+            coEvery { retreiver(any(), 1) } returns 42
 
             assertThat(cache.get(1)).isEqualTo(42)
-            coVerify { retreiver.invoke(any(), 1) }
+            coVerify { retreiver(any(), 1) }
         }
     }
 
@@ -172,7 +175,7 @@ class DiskCacheTest {
         runBlocking {
             assertThat(val1.await()).isEqualTo(val2.await())
 
-            coVerify(exactly = 1) { retreiver.invoke(any(), any()) }
+            coVerify(exactly = 1) { retreiver(any(), any()) }
         }
     }
 
@@ -185,7 +188,7 @@ class DiskCacheTest {
             val1.await()
             val2.await()
 
-            coVerify(exactly = 2) { retreiver.invoke(any(), any()) }
+            coVerify(exactly = 2) { retreiver(any(), any()) }
         }
     }
 
@@ -201,7 +204,7 @@ class DiskCacheTest {
             }
 
             clearAllMocks()
-            coEvery { retreiver.invoke(any(), 1) }.returns(42)
+            coEvery { retreiver(any(), 1) } returns 42
 
             // Stale value should be returned
             assertThat(cacheWithLowMaxAge.get(1)).isEqualTo(23)
@@ -220,18 +223,18 @@ class DiskCacheTest {
             }
 
             clearAllMocks()
-            coEvery { retreiver.invoke(any(), 1) }.returns(42)
+            coEvery { retreiver(any(), 1) } returns 42
 
             // Read stale value -> should trigger an async update of value
             cacheWithLowMaxAge.get(1)
             // Async code should update value
-            coVerify(timeout = 25) { retreiver.invoke(any(), 1) }
+            coVerify(timeout = 25) { retreiver(any(), 1) }
 
             // New value should be returned and not be re-retrieved
             clearAllMocks(answers = false)
             assertThat(cacheWithLowMaxAge.get(1)).isEqualTo(42)
             // No additional calls to retriever
-            coVerify(exactly = 0) { retreiver.invoke(any(), 1) }
+            coVerify(exactly = 0) { retreiver(any(), 1) }
         }
     }
 

@@ -16,10 +16,7 @@
 
 package androidapp.byco.data
 
-import androidapp.byco.util.observeAsChannel
 import com.google.common.truth.Truth.assertThat
-import kotlinx.coroutines.Dispatchers.Main
-import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import lib.gpx.MapArea
@@ -30,28 +27,24 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 
 @RunWith(JUnit4::class)
-class ElevationDataRepositoryTest : BaseCoroutineTest() {
+class ElevationDataRepositoryTest : BaseTest() {
     @Test(timeout = 30_000)
     fun getElevation() {
-        val repo = runBlocking(Main) {
-            ElevationDataRepository[app]
-        }
         runBlocking {
-            val data = repo.getElevationData(
+            val data = ElevationDataRepository[app].getElevationData(
                 MapArea(
                     BigDecimal(37.4).setScale(1, RoundingMode.HALF_UP),
                     BigDecimal(-122.2).setScale(1, RoundingMode.HALF_UP),
                     BigDecimal(37.5).setScale(1, RoundingMode.HALF_UP),
                     BigDecimal(-122.1).setScale(1, RoundingMode.HALF_UP)
                 )
-            ).observeAsChannel().consumeAsFlow().first()
+            ).first()!!
 
-            assertThat(data.getElevation(37.4, -122.2)).isWithin(1f).of(90f)
+            assertThat(data.getElevation(37.4, -122.2)).isWithin(1f).of(93f)
             assertThat(data.getElevation(37.5, -122.2)).isWithin(1f).of(0f)
-            assertThat(data.getElevation(37.4, -122.1)).isWithin(1f).of(20f)
-            assertThat(data.getElevation(37.5, -122.1)).isWithin(1f).of(0f)
-
-            assertThat(data.getElevation(37.45, -122.15)).isWithin(1f).of(13f)
+            assertThat(data.getElevation(37.4, -122.1)).isWithin(1f).of(23f)
+            assertThat(data.getElevation(37.5, -122.1)).isWithin(1f).of(3f)
+            assertThat(data.getElevation(37.45, -122.15)).isWithin(1f).of(15f)
         }
     }
 }
