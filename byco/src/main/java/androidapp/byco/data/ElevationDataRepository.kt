@@ -88,7 +88,7 @@ class ElevationDataRepository private constructor(
         NUM_CACHED_TILES = numCachedTiles
     )
 
-    val TILE_WIDTH = ONE.divide(TEN.pow(TILE_SCALE))
+    private val TILE_WIDTH = ONE.divide(TEN.pow(TILE_SCALE))
 
     private val elevationDataCache = DiskCache(
         CACHE_LOCATION,
@@ -109,7 +109,6 @@ class ElevationDataRepository private constructor(
             }
         },
         { out, key, data ->
-            @Suppress("BlockingMethodInNonBlockingContext")
             withContext(Dispatchers.IO) {
                 ZipOutputStream(out).use { zipOs ->
                     zipOs.newEntry("mapData") {
@@ -449,7 +448,7 @@ class ElevationDataRepository private constructor(
                     if (previousClimbs.isNotEmpty()
                         && climb.start - previousClimbs.last().end < MIN_GAP_IN_BETWEEN_CLIMBS
                     ) {
-                        val prevClimb = previousClimbs.removeLast()
+                        val prevClimb = previousClimbs.removeAt(previousClimbs.lastIndex)
                         previousClimbs.add(prevClimb.combine(climb))
                     } else {
                         previousClimbs.add(climb)

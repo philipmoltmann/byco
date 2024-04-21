@@ -139,18 +139,16 @@ class ThumbnailRepository private constructor(
         width: Int = THUMBNAIL_SIZE,
         height: Int = THUMBNAIL_SIZE,
     ) {
-        private val map: MapView
+        private val map = getMapView(app.createConfigurationContext(Configuration().apply {
+            uiMode =
+                (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or if (isDarkMode) {
+                    Configuration.UI_MODE_NIGHT_YES
+                } else {
+                    Configuration.UI_MODE_NIGHT_NO
+                }
+        }), rideArea, width, height)
 
         init {
-            map = getMapView(app.createConfigurationContext(Configuration().apply {
-                uiMode =
-                    (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or if (isDarkMode) {
-                        Configuration.UI_MODE_NIGHT_YES
-                    } else {
-                        Configuration.UI_MODE_NIGHT_NO
-                    }
-            }), rideArea, width, height)
-
             clipArea?.let { map.clipArea = it }
         }
 

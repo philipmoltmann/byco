@@ -100,7 +100,6 @@ class MapDataRepository private constructor(
     private val TILE_WIDTH = ONE.divide(TEN.pow(TILE_SCALE))
 
     /** Cache map data on disk so that it does not have to be loaded from network */
-    @Suppress("BlockingMethodInNonBlockingContext")
     private val mapDataCache = DiskCache(
         CACHE_LOCATION,
         MAX_AGE,

@@ -55,7 +55,7 @@ dependencies {
     androidTestImplementation 'androidx.test:core:1.5.0'
     androidTestImplementation 'androidx.test.ext:junit-ktx:1.1.5'
     androidTestImplementation 'androidx.test:runner:1.5.2'
-    androidTestImplementation 'com.google.truth:truth:1.2.0'
-    androidTestImplementation 'io.mockk:mockk-android:1.13.8'
+    androidTestImplementation 'com.google.truth:truth:1.4.2'
+    androidTestImplementation 'io.mockk:mockk-android:1.13.10'
     androidTestImplementation 'junit:junit:4.13.2'
 }

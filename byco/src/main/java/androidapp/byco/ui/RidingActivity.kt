@@ -72,7 +72,7 @@ class RidingActivity : BycoActivity(ProcessPriority.RIDING) {
         binding.recordStop.setOnClickListener {
             binding.recordCoach.neverShowAgain()
 
-            if (viewModel.isRideBeingRecorded.value == true) {
+            if (viewModel.isRideBeingRecorded.value) {
                 viewModel.stopRideRecording()
             } else {
                 viewModel.startRideRecording()

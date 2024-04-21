@@ -44,7 +44,10 @@ class SaveToFileActivity : BycoActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val fileName = intent.getStringExtra(EXTRA_FILE_NAME)
+        val fileName = intent.getStringExtra(EXTRA_FILE_NAME) ?: run {
+            finish()
+            return@onCreate
+        }
 
         binding = SaveToFileActivityBinding.inflate(layoutInflater)
         setContentView(binding.root)

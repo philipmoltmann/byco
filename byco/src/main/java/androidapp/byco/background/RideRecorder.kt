@@ -28,6 +28,7 @@ import android.content.Intent
 import android.content.Intent.ACTION_SHUTDOWN
 import android.content.IntentFilter
 import android.location.Location
+import android.os.Build
 import android.os.DeadObjectException
 import android.os.IBinder
 import androidapp.byco.NotificationIds
@@ -289,7 +290,9 @@ class RideRecorder : BycoService() {
         private val rideTimeObserver = Observer<Duration?> {
             it?.let { rideTime ->
                 synchronized(this) {
-                    if (usesForegroundService) {
+                    if (usesForegroundService
+                        && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                    ) {
                         getSystemService(NotificationManager::class.java).notify(
                             NotificationIds.RIDE_RECORDING.ordinal,
                             getNotification(rideTime)

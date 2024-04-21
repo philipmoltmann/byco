@@ -48,7 +48,7 @@ open class Node(
      */
     @get:VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)
     val mutableWays: MutableSet<Way> = ArraySet(),
-    val ways: Set<Way> = mutableWays
+    private val ways: Set<Way> = mutableWays
 ) : BasicLocation(latitude, longitude) {
     private var cachedAbsoluteCoordinatesZoom = 18f
     private var cachedAbsoluteCoordinates: MapView.AbsoluteCoordinates? = null

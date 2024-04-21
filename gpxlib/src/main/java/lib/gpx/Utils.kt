@@ -21,8 +21,8 @@ import java.util.*
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
-val UTC = TimeZone.getTimeZone("UTC")
-val UTF8 = Charset.forName("UTF-8")
+val UTC: TimeZone = TimeZone.getTimeZone("UTC")
+val UTF8: Charset = Charset.forName("UTF-8")
 
 /** Map through all entries of a [ZipInputStream] */
 inline fun <V> ZipInputStream.findFirstNotNull(block: ZipInputStream.(ZipEntry) -> (V)): V? {

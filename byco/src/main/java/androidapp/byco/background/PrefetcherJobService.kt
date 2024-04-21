@@ -36,7 +36,7 @@ import kotlinx.coroutines.launch
 class PrefetcherJobService : BycoJobService(), LifecycleOwner {
     private val TAG = PrefetcherJobService::class.java.simpleName
 
-    var isFinished = false
+    private var isFinished = false
 
     override fun onStartJob(params: JobParameters?): Boolean {
         super.onStartJob(params)
