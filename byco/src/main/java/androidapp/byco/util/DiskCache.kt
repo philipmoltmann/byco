@@ -39,6 +39,10 @@ import java.io.OutputStream
 import kotlin.math.abs
 import kotlin.random.Random
 
+interface DiskCacheKey {
+    fun toDirName(): String
+}
+
 /**
  * Generic on disk cache.
  *
@@ -52,7 +56,7 @@ import kotlin.random.Random
  * @param reader Read values from disk
  */
 @OptIn(DelicateCoroutinesApi::class)
-class DiskCache<K, V>(
+class DiskCache<K : DiskCacheKey, V>(
     private val location: File,
     private val maxCacheAgeMs: Long,
     val numParallelLockedKeys: Int = 16,
@@ -206,7 +210,7 @@ class DiskCache<K, V>(
     /**
      * Most likely load the value for the key into the cache.
      *
-     * This does not guarantee that the data is loaded as [key]-hashcode collisions are treated as
+     * This does not guarantee that the data is loaded as `key.toDirName` collisions are treated as
      * already loaded values.
      *
      * @return the cached or new value
@@ -231,7 +235,7 @@ class DiskCache<K, V>(
      * guarantee, but very likely.
      */
     fun hasData(key: K) = dataModifiedTrigger.flow.map {
-        File(location, key.hashCode().toString()).exists()
+        File(location, key.toDirName()).exists()
     }
 
     /**
@@ -240,7 +244,7 @@ class DiskCache<K, V>(
      * @return the cached or new value (`null` if isCancelable and canceled)
      */
     suspend fun get(key: K, skipIfLocked: Boolean = false): V? {
-        val cachedDataFileDir = File(location, key.hashCode().toString())
+        val cachedDataFileDir = File(location, key.toDirName())
 
         return withContext(IO) {
             withKeyLocked(key, skipIfLocked) {
@@ -298,7 +302,7 @@ class DiskCache<K, V>(
     }
 }
 
-fun <K, V> diskCacheOf(
+fun <K : DiskCacheKey, V> diskCacheOf(
     location: File,
     maxCacheAgeMs: Long,
     retriever: suspend CoroutineScope.(K) -> V,

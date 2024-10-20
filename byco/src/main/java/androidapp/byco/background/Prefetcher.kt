@@ -74,7 +74,6 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import lib.gpx.BasicLocation
 import lib.gpx.DebugLog
 import lib.gpx.MapArea
 import lib.gpx.Track
@@ -184,10 +183,7 @@ class Prefetcher(
                                                 },
                                                 async {
                                                     ElevationDataRepository[app].preFetchElevationData(
-                                                        BasicLocation(
-                                                            it.first.toDouble(),
-                                                            it.second.toDouble()
-                                                        )
+                                                        it.toBasicLocation()
                                                     )
                                                 })
                                         }.flatten().awaitAll()

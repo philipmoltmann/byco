@@ -25,6 +25,7 @@ import android.net.Uri
 import androidapp.byco.LowPriority
 import androidapp.byco.data.LocationRepository
 import androidapp.byco.data.MapDataRepository
+import androidapp.byco.data.MapTileKey
 import androidapp.byco.data.PhoneStateRepository
 import androidapp.byco.data.RouteFinderRepository
 import androidapp.byco.data.ThumbnailRepository
@@ -65,7 +66,6 @@ import lib.gpx.BasicLocation
 import lib.gpx.DebugLog
 import lib.gpx.MapArea
 import java.lang.ref.WeakReference
-import java.math.BigDecimal
 import java.math.BigDecimal.ONE
 import java.math.BigDecimal.TEN
 
@@ -227,7 +227,7 @@ class ConfirmDirectionsActivityViewModel(
                     var countryCode: String? = null
 
                     /** draw one map tile worth of data onto background */
-                    suspend fun draw(routeArea: MapArea, tileKey: Pair<BigDecimal, BigDecimal>) {
+                    suspend fun draw(routeArea: MapArea, tileKey: MapTileKey) {
                         val (lat, lon) = tileKey
                         val renderArea = MapArea(lat, lon, lat + TILE_WIDTH, lon + TILE_WIDTH)
 
@@ -276,7 +276,7 @@ class ConfirmDirectionsActivityViewModel(
                                     tilesArea.maxLon,
                                     TILE_WIDTH
                                 ) { lon ->
-                                    emit(lat to lon)
+                                    emit(MapTileKey(lat, lon))
                                 }
                             }
                         }

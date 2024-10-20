@@ -20,8 +20,10 @@ import android.os.SystemClock
 import android.util.Log
 import androidapp.byco.BycoApplication
 import androidapp.byco.LowPriority
+import androidapp.byco.data.MapDataRepository.Companion.TILE_SCALE
 import androidapp.byco.ui.views.DISPLAYED_HIGHWAY_TYPES
 import androidapp.byco.util.DiskCache
+import androidapp.byco.util.DiskCacheKey
 import androidapp.byco.util.Repository
 import androidapp.byco.util.SelfCleaningCache
 import androidapp.byco.util.SingleParameterSingletonOf
@@ -61,6 +63,7 @@ import kotlinx.coroutines.withContext
 import lib.gpx.BasicLocation
 import lib.gpx.DebugLog
 import lib.gpx.MapArea
+import lib.gpx.PreciseLocation
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
@@ -76,7 +79,17 @@ import java.util.zip.ZipOutputStream
 import kotlin.coroutines.coroutineContext
 
 private typealias MapTile = SharedFlow<Pair<List<ParsedNode>, List<ParsedWay>>?>
-typealias MapTileKey = Pair<BigDecimal, BigDecimal>
+
+class MapTileKey(lat: BigDecimal, lon: BigDecimal) : PreciseLocation(lat, lon), DiskCacheKey {
+    override val scale = TILE_SCALE
+
+    init {
+        assert(lat.scale() == scale)
+        assert(lon.scale() == scale)
+    }
+
+    override fun toDirName() = "${lat.setScale(scale, HALF_UP)}_${lon.setScale(scale, HALF_UP)}"
+}
 
 typealias MapData = Set<Way>
 
@@ -146,8 +159,8 @@ class MapDataRepository private constructor(
                         val dataOs = DataOutputStream(zipOs.buffered())
 
                         dataOs.writeInt(CURRENT_DATA_FORMAT_VERSION)
-                        dataOs.writeBigDecimal(key.first)
-                        dataOs.writeBigDecimal(key.second)
+                        dataOs.writeBigDecimal(key.lat)
+                        dataOs.writeBigDecimal(key.lon)
 
                         val nodes = data.first
                         dataOs.writeInt(nodes.size)
@@ -188,7 +201,7 @@ class MapDataRepository private constructor(
                                         dataIs.readParsedWay(version)
                                     }
 
-                                    (lat to lon) to (nodes to ways)
+                                    MapTileKey(lat, lon) to (nodes to ways)
                                 }
 
                                 else -> throw DiskCache.InvalidCachedDataFileException("unsupported data file version $version")
@@ -285,7 +298,7 @@ class MapDataRepository private constructor(
         ) {
             forBigDecimal(centerLat - distanceDeg, centerLat + distanceDeg, TILE_WIDTH) { lat ->
                 forBigDecimal(centerLon - distanceDeg, centerLon + distanceDeg, TILE_WIDTH) { lon ->
-                    mapTiles.add(lat to lon)
+                    mapTiles.add(MapTileKey(lat, lon))
                 }
             }
 
@@ -315,7 +328,7 @@ class MapDataRepository private constructor(
 
         mapBigDecimal(mapArea.minLat, mapArea.maxLat, TILE_WIDTH) { lat ->
             mapBigDecimal(mapArea.minLon, mapArea.maxLon, TILE_WIDTH) { lon ->
-                lat to lon
+                MapTileKey(lat, lon)
             }
         }.flatten().asFlow().flatMapMerge(mapDataCache.numParallelLockedKeys) { key ->
             getMapDataTile(key).filterNotNull().take(1)

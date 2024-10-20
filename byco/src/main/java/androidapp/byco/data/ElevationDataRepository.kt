@@ -18,8 +18,10 @@ package androidapp.byco.data
 
 import android.util.Log
 import androidapp.byco.BycoApplication
+import androidapp.byco.data.ElevationDataRepository.Companion.TILE_SCALE
 import androidapp.byco.ui.views.ElevationView
 import androidapp.byco.util.DiskCache
+import androidapp.byco.util.DiskCacheKey
 import androidapp.byco.util.Repository
 import androidapp.byco.util.SelfCleaningCache
 import androidapp.byco.util.SingleParameterSingletonOf
@@ -47,6 +49,7 @@ import lib.gpx.BasicLocation
 import lib.gpx.DebugLog
 import lib.gpx.Distance
 import lib.gpx.MapArea
+import lib.gpx.PreciseLocation
 import lib.gpx.RecordedLocation
 import lib.gpx.Track
 import java.io.DataInputStream
@@ -70,7 +73,17 @@ import kotlin.math.min
 import kotlin.math.pow
 
 private typealias ElevationTile = SharedFlow<ParsedOpenTopographyData?>
-private typealias ElevationTileKey = Pair<BigDecimal, BigDecimal>
+
+class ElevationTileKey(lat: BigDecimal, lon: BigDecimal) : PreciseLocation(lat, lon), DiskCacheKey {
+    override val scale = TILE_SCALE
+
+    init {
+        assert(lat.scale() == scale)
+        assert(lon.scale() == scale)
+    }
+
+    override fun toDirName() = "${lat.setScale(scale, HALF_UP)}_${lon.setScale(scale, HALF_UP)}"
+}
 
 class ElevationDataRepository private constructor(
     private val app: BycoApplication,
@@ -115,8 +128,8 @@ class ElevationDataRepository private constructor(
                         val dataOs = DataOutputStream(zipOs.buffered())
                         dataOs.writeInt(CURRENT_DATA_FORMAT_VERSION)
 
-                        dataOs.writeBigDecimal(key.first)
-                        dataOs.writeBigDecimal(key.second)
+                        dataOs.writeBigDecimal(key.lat)
+                        dataOs.writeBigDecimal(key.lon)
 
                         dataOs.writeParsedOpenTopographyData(data)
 
@@ -137,7 +150,10 @@ class ElevationDataRepository private constructor(
                                     val lat = dataIs.readBigDecimal()
                                     val lon = dataIs.readBigDecimal()
 
-                                    (lat to lon) to dataIs.readParsedOpenTopographyData()
+                                    ElevationTileKey(
+                                        lat,
+                                        lon
+                                    ) to dataIs.readParsedOpenTopographyData()
                                 }
 
                                 else -> throw DiskCache.InvalidCachedDataFileException("unsupported data file version $version")
@@ -188,7 +204,7 @@ class ElevationDataRepository private constructor(
     fun getElevationData(mapArea: MapArea) = flow {
         emit(mapBigDecimalSuspend(mapArea.minLat, mapArea.maxLat, TILE_WIDTH) { lat ->
             mapBigDecimalSuspend(mapArea.minLon, mapArea.maxLon, TILE_WIDTH) { lon ->
-                val data = getElevationDataTile(lat to lon).first()
+                val data = getElevationDataTile(ElevationTileKey(lat, lon)).first()
 
                 data?.let {
                     ElevationData(
@@ -233,7 +249,7 @@ class ElevationDataRepository private constructor(
         val centerLon = BigDecimal(center.longitude).setScale(TILE_SCALE, DOWN)
 
         try {
-            elevationDataCache.preFetch(centerLat to centerLon, true)
+            elevationDataCache.preFetch(ElevationTileKey(centerLat, centerLon), true)
         } catch (e: DiskCache.SkippedBecauseLockedException) {
             // pass
         } catch (e: Exception) {
