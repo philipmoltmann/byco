@@ -17,6 +17,7 @@
 package androidapp.byco.data
 
 import android.os.SystemClock
+import android.util.Log
 import androidapp.byco.BycoApplication
 import androidapp.byco.data.OsmDataProvider.BicycleType.DESIGNATED
 import androidapp.byco.data.OsmDataProvider.BicycleType.DISMOUNT
@@ -63,6 +64,7 @@ import kotlinx.coroutines.withTimeout
 import lib.gpx.BasicLocation
 import lib.gpx.DebugLog
 import lib.gpx.MapArea
+import lib.gpx.toBasicLocation
 import java.math.BigDecimal
 import java.math.RoundingMode.CEILING
 import java.math.RoundingMode.FLOOR
@@ -70,9 +72,26 @@ import java.math.RoundingMode.HALF_UP
 import java.util.PriorityQueue
 import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.math.pow
+import kotlin.math.sqrt
 
-private val MAP_TILE_MULT = 10.0.pow(MapDataRepository.TILE_SCALE) * 0.25
+/** @see MAP_TILE_SIZE */
+private val MAP_TILE_MULT = 10.0.pow(MapDataRepository.TILE_SCALE)
+
+/**
+ * The searching is one tile at a time. Once all nodes in a tile have been checked, the next tile
+ * is searched. Hence the bigger the tile is, the more unnecessary data is loaded, but the less
+ * tile-switching needs to be done.
+ *
+ * I.e. the bigger this is, the less unnecessary re-loading is done, but the more sub-par nodes are
+ * searched.
+ */
 private val MAP_TILE_SIZE = 1 / MAP_TILE_MULT
+
+/**
+ * Size of the area searched for when finding ways from the current user location to the closes way
+ * on the map.
+ */
+private val GENERATED_WAYS_MAP_TILE_SIZE = 1 / MAP_TILE_MULT
 
 // Representation of a tile without the overhead of BigDecimals
 private typealias TileKey = Long
@@ -148,7 +167,8 @@ class RouteFinderRepository internal constructor(
     fun findRoute(
         startLoc: BasicLocation,
         goalLoc: BasicLocation,
-        providedCountryCode: CountryCode = null
+        providedCountryCode: CountryCode = null,
+        postIntermediateUpdates: Boolean = true
     ) = flow {
         /**
          * Small local cache as we often search along a path and hence a neighbor might be the
@@ -166,6 +186,16 @@ class RouteFinderRepository internal constructor(
         /** Round double to a [BigDecimal] so it is the edge of a map tile */
         fun Double.roundToBigDecimalMapTileScale(): BigDecimal {
             return toBigDecimal().setScale(MapDataRepository.TILE_SCALE, HALF_UP)
+        }
+
+        /** Round double to a [BigDecimal] so it is the lower edge of a map tile */
+        fun Double.floorToBigDecimalMapTileScale(): BigDecimal {
+            return toBigDecimal().setScale(MapDataRepository.TILE_SCALE, FLOOR)
+        }
+
+        /** Round double to a [BigDecimal] so it is the upper edge of a map tile */
+        fun Double.ceilToBigDecimalMapTileScale(): BigDecimal {
+            return toBigDecimal().setScale(MapDataRepository.TILE_SCALE, CEILING)
         }
 
         /** Round double to a [BigDecimal] so it is the lower edge of a elevation tile */
@@ -203,7 +233,11 @@ class RouteFinderRepository internal constructor(
 
         /** Get travel effort from a [Node] to its direct [neighbor] on [way] */
         fun Node.to(neighbor: Node, way: Way): Float {
-            val distance = distanceTo(neighbor)
+            // Don't compute real spherical distance. Just assume flat map. This is good enough for
+            // any bikeable distance.
+            val latDiff = latitude - neighbor.latitude
+            val lonDiff = longitude - neighbor.longitude
+            val distance = sqrt(latDiff * latDiff + lonDiff * lonDiff).toFloat()
 
             // Don't build up too much unnecessary data in elevationCache. Quick reuse is
             // common. Reuse after some time makes the cache very large and the memory overhead
@@ -301,16 +335,17 @@ class RouteFinderRepository internal constructor(
             return distanceTo(other)
         }
 
+        val startTime = SystemClock.elapsedRealtime()
         // Find nodes close to start
         val start = startLoc.toNode()
         val startA = coroutineScope {
             async {
                 MapDataRepository[app].getMapData(
                     MapArea(
-                        (startLoc.latitude - MAP_TILE_SIZE).roundToBigDecimalMapTileScale(),
-                        (startLoc.longitude - MAP_TILE_SIZE).roundToBigDecimalMapTileScale(),
-                        (startLoc.latitude + MAP_TILE_SIZE).roundToBigDecimalMapTileScale(),
-                        (startLoc.longitude + MAP_TILE_SIZE).roundToBigDecimalMapTileScale()
+                        (startLoc.latitude - GENERATED_WAYS_MAP_TILE_SIZE / 2).floorToBigDecimalMapTileScale(),
+                        (startLoc.longitude - GENERATED_WAYS_MAP_TILE_SIZE / 2).floorToBigDecimalMapTileScale(),
+                        (startLoc.latitude + GENERATED_WAYS_MAP_TILE_SIZE / 2).ceilToBigDecimalMapTileScale(),
+                        (startLoc.longitude + GENERATED_WAYS_MAP_TILE_SIZE / 2).ceilToBigDecimalMapTileScale()
                     )
                 ).first().getClosestPointsOnSegments(startLoc)
                     .filter { (_, closesNode) ->
@@ -325,10 +360,10 @@ class RouteFinderRepository internal constructor(
             async {
                 MapDataRepository[app].getMapData(
                     MapArea(
-                        (goalLoc.latitude - MAP_TILE_SIZE).roundToBigDecimalMapTileScale(),
-                        (goalLoc.longitude - MAP_TILE_SIZE).roundToBigDecimalMapTileScale(),
-                        (goalLoc.latitude + MAP_TILE_SIZE).roundToBigDecimalMapTileScale(),
-                        (goalLoc.longitude + MAP_TILE_SIZE).roundToBigDecimalMapTileScale()
+                        (goalLoc.latitude - GENERATED_WAYS_MAP_TILE_SIZE / 2).floorToBigDecimalMapTileScale(),
+                        (goalLoc.longitude - GENERATED_WAYS_MAP_TILE_SIZE / 2).floorToBigDecimalMapTileScale(),
+                        (goalLoc.latitude + GENERATED_WAYS_MAP_TILE_SIZE / 2).ceilToBigDecimalMapTileScale(),
+                        (goalLoc.longitude + GENERATED_WAYS_MAP_TILE_SIZE / 2).ceilToBigDecimalMapTileScale()
                     )
                 ).first().getClosestPointsOnSegments(goalLoc)
                     .filter { (_, closesNode) ->
@@ -404,7 +439,6 @@ class RouteFinderRepository internal constructor(
         // Best guess of the travel effort from start to node to goal
         val estStartToNodeToGoal = HashMap<Long, Float>()
         estStartToNodeToGoal[start.id] = start.estTo(goal)
-
         val hasLessEstStartToNodeToGoal =
             Comparator<Node> { a, b ->
                 if (a == b) {
@@ -460,6 +494,8 @@ class RouteFinderRepository internal constructor(
 
         var useElevationData = true
 
+        var checkedNodes = 0
+        var checkedTiles = 0
         while (true) {
             // Find the node which represents the best estimation for the closest
             // path to goal.
@@ -470,9 +506,11 @@ class RouteFinderRepository internal constructor(
             val current = nodesToCheck[currentTile]?.firstOrNull()
                 ?: nodesToCheck.values.mapNotNull { it.firstOrNull() }
                     .minByOrNull { estStartToNodeToGoal[it.id]!! } ?: break
+            checkedNodes++
 
             // Occasionally post intermediate updates (to show search progress to user)
-            if (current.distanceTo(goal) < bestRouteFromGoal
+            if (postIntermediateUpdates
+                && current.distanceTo(goal) < bestRouteFromGoal
                 && SystemClock.elapsedRealtime() - lastIntermediateUpdate
                 > SECONDS.toMillis(1)
             ) {
@@ -483,10 +521,13 @@ class RouteFinderRepository internal constructor(
             }
 
             fun MutableSet<Way>.keepOnlyGenerated() {
-                filter { it.highway == GENERATED }.run {
-                    this@keepOnlyGenerated.clear()
-                    this@keepOnlyGenerated.addAll(this)
+                if (isEmpty()) {
+                    return
                 }
+
+                val generated = filter { it.highway == GENERATED }
+                clear()
+                addAll(generated)
             }
 
             // Maybe change tile we are looking at, i.e.
@@ -494,6 +535,7 @@ class RouteFinderRepository internal constructor(
             // - update [currentTileElevation]
             val newTile = current.toTileKey()
             if (newTile != currentTile) {
+                checkedTiles++
                 // Remove ways from all nodes to avoid having all nodes connected which
                 // would have made them non gc-able and will run us out of memory.
                 // Keep generated ways as they are not too large.
@@ -609,6 +651,21 @@ class RouteFinderRepository internal constructor(
                     currentTile = betterNode.toTileKey()
                     continue
                 } else {
+                    if (DebugLog.isEnabled) {
+                        DebugLog.i(
+                            TAG,
+                            "Searched from ${
+                                start.toLocation().toBasicLocation()
+                            } -> ${
+                                goal.toLocation().toBasicLocation()
+                            } in ${(SystemClock.elapsedRealtime() - startTime) / 1000.0}s, checked $checkedNodes nodes and loaded $checkedTiles tiles. Dataset ${estStartToNodeToGoal.size} nodes."
+                        )
+                    } else {
+                        Log.i(
+                            TAG,
+                            "Searched in ${(SystemClock.elapsedRealtime() - startTime) / 1000.0}s while checking $checkedNodes nodes and loaded $checkedTiles tiles. Dataset ${estStartToNodeToGoal.size} nodes."
+                        )
+                    }
                     // Found the best route
                     emit(goal.getRouteFromStart())
                     return@flow

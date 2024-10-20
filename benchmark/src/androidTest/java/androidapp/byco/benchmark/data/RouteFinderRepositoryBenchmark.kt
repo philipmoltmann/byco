@@ -17,7 +17,6 @@
 package androidapp.byco.benchmark.data
 
 import androidapp.byco.BycoApplication
-import androidapp.byco.data.Node
 import androidapp.byco.data.RouteFinderRepository
 import androidx.benchmark.junit4.BenchmarkRule
 import androidx.benchmark.junit4.measureRepeated
@@ -30,6 +29,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
+import com.google.common.truth.Truth.assertThat
+import lib.gpx.BasicLocation
 
 @RunWith(JUnit4::class)
 class RouteFinderRepositoryBenchmark {
@@ -42,8 +43,8 @@ class RouteFinderRepositoryBenchmark {
             InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as BycoApplication
 
         benchmarkRule.measureRepeated {
-            val startLoc = Node(-1, 37.334790, -121.888140)
-            val goalLoc = Node(-1, 37.423622, -122.087327)
+            val startLoc = BasicLocation(37.334790, -121.888140)
+            val goalLoc = BasicLocation(37.423622, -122.087327)
 
             runBlocking {
                 val routeFinder = runWithTimingDisabled {
@@ -52,7 +53,11 @@ class RouteFinderRepositoryBenchmark {
                     }
                 }
 
-                routeFinder.findRoute(startLoc, goalLoc).first()
+                val route =
+                    routeFinder.findRoute(startLoc, goalLoc, postIntermediateUpdates = false)
+                        .first()
+                assertThat(route.first().toString()).isEqualTo(startLoc.toString())
+                assertThat(route.last().toString()).isEqualTo(goalLoc.toString())
             }
         }
     }
