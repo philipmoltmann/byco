@@ -18,6 +18,7 @@ package androidapp.byco.benchmark.data
 
 import androidapp.byco.BycoApplication
 import androidapp.byco.data.ElevationDataRepository
+import androidapp.byco.data.ElevationTileKey
 import androidapp.byco.data.MapDataRepository
 import androidapp.byco.data.Node
 import androidx.benchmark.junit4.BenchmarkRule
@@ -61,7 +62,7 @@ class ElevationDataRepositoryBenchmark {
 
         // Make sure data is cached on disk
         runBlocking {
-            repo.getElevationDataTile(minLat to minLon).first()
+            repo.getElevationDataTile(ElevationTileKey(minLat, minLon)).first()
         }
     }
 
@@ -111,12 +112,12 @@ class ElevationDataRepositoryBenchmark {
 
         // Make sure data is cached in memory
         runBlocking {
-            repo.getElevationDataTile(minLat to minLon).first()
+            repo.getElevationDataTile(ElevationTileKey(minLat, minLon)).first()
         }
 
         benchmarkRule.measureRepeated {
             runBlocking {
-                repo.getElevationDataTile(minLat to minLon)
+                repo.getElevationDataTile(ElevationTileKey(minLat, minLon))
                     .first()
             }
         }
@@ -130,12 +131,12 @@ class ElevationDataRepositoryBenchmark {
 
         // Make sure data is cached in memory
         runBlocking {
-            repo.getElevationDataTile(minLat to minLon).first()
+            repo.getElevationDataTile(ElevationTileKey(minLat, minLon)).first()
         }
 
         benchmarkRule.measureRepeated {
             runBlocking {
-                repo.getElevationDataTile(minLat to minLon)
+                repo.getElevationDataTile(ElevationTileKey(minLat, minLon))
                     .first()
             }
         }

@@ -16,6 +16,7 @@
 
 package androidapp.byco.ui
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
@@ -387,5 +388,18 @@ class PreviousRidesActivity : BycoActivity() {
 
             else -> false
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+
+        viewModel.shownRide.value?.let {
+            setResult(RESULT_OK, Intent().putExtra(KEY_SELECTED_PREVIOUS_RIDE, it.file.name))
+        }
+    }
+
+    companion object {
+        /** Ride selected when the activity was closed. */
+        internal val KEY_SELECTED_PREVIOUS_RIDE = "KEY_SELECTED_PREVIOUS_RIDE"
     }
 }

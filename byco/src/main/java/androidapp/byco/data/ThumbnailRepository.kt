@@ -320,11 +320,11 @@ class ThumbnailRepository private constructor(
             }
 
             var endHighlighted = 0f
-            for (segment in fullTrack.segments.reversed()) {
+            for (segment in fullTrack.segments.asReversed()) {
                 var lastHighlightedNode: RecordedLocation? = null
 
                 highlightedTrack.add(mutableListOf())
-                for (node in segment.reversed()) {
+                for (node in segment.asReversed()) {
                     if (lastHighlightedNode != null) {
                         endHighlighted += lastHighlightedNode.distanceTo(node)
                     }

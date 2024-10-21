@@ -12,28 +12,24 @@ android {
         applicationId "androidapp.byco"
         minSdk 23
         targetSdk target_sdk
-        versionCode 70
-        versionName "2.2.4"
+        versionCode 71
+        versionName "2.2.5"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    packagingOptions {
-        resources.excludes.add("META-INF/*")
-    }
-
     buildTypes {
         release {
-            shrinkResources true
-            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
 
             signingConfig signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
 
     testOptions {
@@ -41,7 +37,7 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = '1.8'
+        jvmTarget = '11'
     }
     namespace 'androidapp.byco'
 }

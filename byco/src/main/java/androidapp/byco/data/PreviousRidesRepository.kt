@@ -45,10 +45,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.timeout
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -109,7 +111,7 @@ class PreviousRidesRepository private constructor(
         return v
     }
 
-    /** Send a `Unit` to force an update to [previousRides]. */
+    /** Send a `Unit` to force an update to [previousRidesAndDirectionsBack]. */
     internal val previousRidesUpdateTrigger = Trigger(repositoryScope)
 
     private val changeToRecordingsDirectory = callbackFlow {
@@ -131,8 +133,8 @@ class PreviousRidesRepository private constructor(
         awaitClose { directoryObserver.stopWatching() }
     }.stateIn(FileObserver.CREATE)
 
-    /** All previous recorded (and added) rides */
-    val previousRides = flow {
+    /** All previous recorded (and added) rides including the directions back. */
+    val previousRidesAndDirectionsBack = flow {
         var previouslyParsed = listOf<PreviousRide>()
 
         (previousRidesUpdateTrigger.flow + changeToRecordingsDirectory).collect {
@@ -167,7 +169,13 @@ class PreviousRidesRepository private constructor(
             previouslyParsed = newParsed
             emit(previouslyParsed)
         }
-    }.stateIn(emptyList())
+    }.stateIn(null)
+
+    /** All previous recorded (and added) rides, but not the current directions back. */
+    val previousRides =
+        previousRidesAndDirectionsBack.filterNotNull()
+            .map { it.filter { previousRide -> !previousRide.isDirectionsHome } }
+            .stateIn(emptyList())
 
     /**
      * Ride to be shown on map.
@@ -275,6 +283,13 @@ class PreviousRidesRepository private constructor(
      * @see rideShownOnMap
      */
     suspend fun showOnMap(ride: PreviousRide?) {
+        // Directions home are not persisted.
+        rideShownOnMap.value?.let { currentShownRide ->
+            if (currentShownRide.isDirectionsHome) {
+                delete(currentShownRide)
+            }
+        }
+
         rideShownOnMap.emit(ride)
     }
 
@@ -294,7 +309,11 @@ class PreviousRidesRepository private constructor(
         val file = if (fileName != null) {
             File(app.filesDir, fileName)
         } else {
-            File.createTempFile("import-", GPX_ZIP_FILE_EXTENSION, app.filesDir)
+            File.createTempFile(
+                PreviousRide.IMPORTED_FILE_FILE_PREFIX,
+                GPX_ZIP_FILE_EXTENSION,
+                app.filesDir
+            )
         }
 
         // Is there a better way to guess the size of the input?
@@ -331,7 +350,8 @@ class PreviousRidesRepository private constructor(
         previousRidesUpdateTrigger.trigger()
 
         // Find new [PreviousRide]
-        return previousRides.filter { rides -> rides.find { ride -> ride.file.name == file.name } != null }
+        return previousRidesAndDirectionsBack.filterNotNull()
+            .filter { rides -> rides.find { ride -> ride.file.name == file.name } != null }
             // If ride cannot be found, give up after [MAX_PREVIOUS_RIDES_UPDATE].
             .timeout(MAX_PREVIOUS_RIDES_UPDATE).catch { e ->
                 if (e is TimeoutCancellationException) {
@@ -355,14 +375,16 @@ class PreviousRidesRepository private constructor(
             val ins = PipedInputStream()
             val out = PipedOutputStream(ins)
 
-            // receive data from pipe and add as ride
-            launch {
-                ins.buffered().use { addRide(it, ride.file.name) {} }
-            }
+            getTrack(ride).first()?.let { track ->
+                // receive data from pipe and add as ride
+                launch {
+                    ins.buffered().use { addRide(it, ride.file.name) {} }
+                }
 
-            // Re-serialize ride into pipe
-            out.buffered().use {
-                it.writePreviousRide(app, ride, newTitle)
+                // Re-serialize ride into pipe
+                out.buffered().use {
+                    it.writePreviousRide(track, ride.time, newTitle)
+                }
             }
         }
 

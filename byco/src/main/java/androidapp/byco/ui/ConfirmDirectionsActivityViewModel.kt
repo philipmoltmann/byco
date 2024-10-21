@@ -341,7 +341,7 @@ class ConfirmDirectionsActivityViewModel(
 
                     withContext(NonCancellable) {
                         returnValueUpdate.withLock {
-                            routeArea to image.copy(image.config, false)
+                            routeArea to image.copy(image.config!!, false)
                         }.also {
                             delayingUpdateSince = now
                         }

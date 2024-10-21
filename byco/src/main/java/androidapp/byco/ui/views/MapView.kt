@@ -78,7 +78,7 @@ val DISPLAYED_HIGHWAY_TYPES = listOf(
     SECONDARY_LINK, // |
     TERTIARY_LINK,  // L
     BAD_PATH, // below everything, as only usable in emergencies
-).reversed()
+).asReversed()
 
 private typealias Vector = DoubleArray
 

@@ -476,7 +476,7 @@ class RouteFinderRepository internal constructor(
                 routeBack += prev
             }
 
-            return routeBack.reversed()
+            return routeBack.asReversed()
         }
 
         // Travel effort of best known route from start to node (get route via

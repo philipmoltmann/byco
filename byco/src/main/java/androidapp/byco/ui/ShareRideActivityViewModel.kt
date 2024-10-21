@@ -44,6 +44,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -114,21 +115,24 @@ class ShareRideActivityViewModel(
                     share,
                     (ride.title ?: app.getString(R.string.unknown_ride_name)) + GPX_FILE_EXTENSION
                 )
-                gpxToShare.outputStream().buffered().use {
-                    it.writePreviousRide(
-                        app,
-                        ride,
-                        removeStart = if (removeStartAndEnd.value) {
-                            removeStart
-                        } else {
-                            0f
-                        },
-                        removeEnd = if (removeStartAndEnd.value) {
-                            removeEnd
-                        } else {
-                            0f
-                        }
-                    )
+                PreviousRidesRepository[app].getTrack(ride).first()?.let { track ->
+                    gpxToShare.outputStream().buffered().use {
+                        it.writePreviousRide(
+                            track,
+                            ride.time,
+                            ride.title,
+                            removeStart = if (removeStartAndEnd.value) {
+                                removeStart
+                            } else {
+                                0f
+                            },
+                            removeEnd = if (removeStartAndEnd.value) {
+                                removeEnd
+                            } else {
+                                0f
+                            }
+                        )
+                    }
                 }
 
                 val uri = FileProvider.getUriForFile(app, FILE_PROVIDER_AUTHORITY, gpxToShare)

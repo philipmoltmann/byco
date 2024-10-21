@@ -30,11 +30,13 @@ import androidapp.byco.data.LocationRepository
 import androidapp.byco.data.MapData
 import androidapp.byco.data.MapDataRepository
 import androidapp.byco.data.PhoneStateRepository
+import androidapp.byco.data.PreviousRide
 import androidapp.byco.data.PreviousRidesRepository
 import androidapp.byco.data.RideEstimator
 import androidapp.byco.data.RideRecordingRepository
 import androidapp.byco.data.RouteFinderRepository
 import androidapp.byco.data.restrictTo
+import androidapp.byco.data.writePreviousRide
 import androidapp.byco.lib.R
 import androidapp.byco.ui.views.ElevationView
 import androidapp.byco.util.BycoViewModel
@@ -51,10 +53,13 @@ import androidx.annotation.MainThread
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers.Main
+import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -64,17 +69,21 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import lib.gpx.BasicLocation
+import lib.gpx.GPX_ZIP_FILE_EXTENSION
 import lib.gpx.MapArea
 import lib.gpx.RecordedLocation
 import lib.gpx.Track
 import lib.gpx.toBasicLocation
+import java.io.File
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
 import kotlin.time.Duration.Companion.seconds
 
 /** ViewModel for [RidingActivity] */
 @OptIn(ExperimentalCoroutinesApi::class)
 class RidingActivityViewModel(application: Application, val state: SavedStateHandle) :
     BycoViewModel(application) {
-    private val KEY_DIRECTIONS_BACK = "KEY_DIRECTIONS_BACK"
+    private val KEY_PREVIOUS_RIDE_SHOWN = "KEY_DIRECTIONS_BACK"
 
     private val mapAreaUpdate = Channel<MapArea>()
     private val mapArea = mapAreaUpdate.receiveAsFlow().stateIn(null)
@@ -82,6 +91,8 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
 
     private lateinit var getLocationPermissionLauncher: ActivityResultLauncher<String>
     private lateinit var getDirectionsBackLauncher: ActivityResultLauncher<Intent>
+    private lateinit var getPreviousRidesLauncher: ActivityResultLauncher<Intent>
+
     private val rideEstimator = RideEstimator(app, state, viewModelScope)
 
     /** The current date */
@@ -98,7 +109,8 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
 
     /** Is there a previously recorded ride */
     val hasPreviousRide =
-        PreviousRidesRepository[app].previousRides.map { it.isNotEmpty() }.stateIn(false)
+        PreviousRidesRepository[app].previousRidesAndDirectionsBack.map { !it.isNullOrEmpty() }
+            .stateIn(false)
 
     /** Is the current country using miles and mph? */
     val isUsingMiles = LocationRepository[app].isUsingMiles
@@ -111,10 +123,6 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
 
     /** Duration of the currently recorded ride */
     private val recordedRideDuration = RideRecordingRepository[app].rideTime
-
-    /** Directions back (if generated */
-    private val directionsBack =
-        state.getStateFlow<ArrayList<BasicLocation>?>(KEY_DIRECTIONS_BACK, null)
 
     /** [MapData] to show on map */
     private var hadData = false
@@ -139,8 +147,14 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
 
     /** Is currently the directions back shown */
     val isShowingDirectionsBack =
-        (isShowingTrack + directionsBack).map { (isShowingTrack, directionsBack) ->
-            !isShowingTrack && directionsBack != null
+        PreviousRidesRepository[app].rideShownOnMap.map { rideShownOnMap ->
+            if (rideShownOnMap == null) {
+                state.remove(KEY_PREVIOUS_RIDE_SHOWN)
+            } else {
+                state[KEY_PREVIOUS_RIDE_SHOWN] = rideShownOnMap.file.name
+            }
+
+            rideShownOnMap?.isDirectionsHome == true
         }.stateIn(false)
 
     /**
@@ -149,29 +163,12 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
      * @see hideTrack
      */
     val visibleTrack =
-        (isShowingDirectionsBack + PreviousRidesRepository[app].visibleTrack + mapArea
-            .onStart { emit(null) } + directionsBack).map { (_, visibleTrack, mapArea, directionsBack) ->
-            // Unset directions back if previous ride is set
-            if (visibleTrack != null) {
-                withContext(Main) {
-                    if (directionsBack != null) {
-                        state[KEY_DIRECTIONS_BACK] = null
-                    }
-                }
-            }
-
+        (PreviousRidesRepository[app].visibleTrack + mapArea
+            .onStart { emit(null) }).map { (visibleTrack, mapArea) ->
             if (mapArea == null) {
                 null
             } else {
-                if (directionsBack != null) {
-                    Track(listOf(directionsBack.map {
-                        RecordedLocation(
-                            it.latitude, it.longitude, null, null
-                        )
-                    }))
-                } else {
-                    visibleTrack
-                }?.restrictTo(mapArea)
+                visibleTrack?.restrictTo(mapArea)
             }
         }.stateIn(null)
 
@@ -224,6 +221,20 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
 
     val rideStart = RouteFinderRepository[app].rideStart
 
+    init {
+        viewModelScope.launch {
+            PreviousRidesRepository[app].previousRidesAndDirectionsBack.filterNotNull().first()
+                .forEach { previousRide ->
+                    if (previousRide.file.name == state[KEY_PREVIOUS_RIDE_SHOWN]) {
+                        PreviousRidesRepository[app].showOnMap(previousRide)
+                    } else if (previousRide.isDirectionsHome) {
+                        // Clean up unused directions home.
+                        PreviousRidesRepository[app].delete(previousRide)
+                    }
+                }
+        }
+    }
+
     /**
      * Set [boundaries] currently visible on map
      */
@@ -245,7 +256,7 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
      * @param activity current activity
      */
     fun showPreviousRides(activity: Activity) {
-        activity.startActivity(Intent(activity, PreviousRidesActivity::class.java))
+        getPreviousRidesLauncher.launch(Intent(activity, PreviousRidesActivity::class.java))
     }
 
     /**
@@ -311,8 +322,12 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
      *
      * @see getDirectionsBack
      */
-    fun clearDirectionsBack() {
-        state[KEY_DIRECTIONS_BACK] = null
+    suspend fun clearDirectionsBack() {
+        PreviousRidesRepository[app].previousRidesAndDirectionsBack.filterNotNull().first().onEach {
+            if (it.isDirectionsHome) {
+                PreviousRidesRepository[app].showOnMap(null)
+            }
+        }
     }
 
     /**
@@ -359,19 +374,70 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
                 }
             }
 
+        getPreviousRidesLauncher =
+            activity.registerForActivityResult(StartActivityForResult()) { result: ActivityResult ->
+                result.data?.getStringExtra(PreviousRidesActivity.KEY_SELECTED_PREVIOUS_RIDE)
+                    ?.let { previousRideFile ->
+                        state.remove<String>(KEY_PREVIOUS_RIDE_SHOWN)
+
+                        viewModelScope.launch {
+                            PreviousRidesRepository[app].previousRidesAndDirectionsBack.filterNotNull()
+                                .first().find { it.file.name == previousRideFile }?.let {
+                                    PreviousRidesRepository[app].showOnMap(it)
+                                }
+                        }
+                    }
+            }
+
         getDirectionsBackLauncher =
             activity.registerForActivityResult(StartActivityForResult()) { result: ActivityResult ->
                 if (result.resultCode == RESULT_OK) {
                     // Unload any currently shown track
                     viewModelScope.launch {
                         PreviousRidesRepository[app].showOnMap(null)
+                        clearDirectionsBack()
 
-                        // Set directions back as track
-                        state[KEY_DIRECTIONS_BACK] =
+                        val directionsBack =
                             result.data!!.getParcelableArrayListExtraCompat(
                                 ConfirmDirectionsActivityViewModel.EXTRA_DIRECTIONS,
                                 BasicLocation::class.java
+                            ) ?: return@launch
+
+                        val track = Track(listOf(directionsBack.map {
+                            RecordedLocation(
+                                it.latitude,
+                                it.longitude,
+                                null,
+                                null
                             )
+                        }))
+
+                        val directionsBackFile = File.createTempFile(
+                            PreviousRide.DIRECTIONS_HOME_FILE_PREFIX,
+                            GPX_ZIP_FILE_EXTENSION,
+                            app.filesDir
+                        )
+
+                        // Add the directions back as a previous track with a special file name.
+                        val addedRide = withContext(IO) {
+                            val ins = PipedInputStream()
+                            val out = PipedOutputStream(ins)
+                            val add = async {
+                                PreviousRidesRepository[app].addRide(
+                                    ins,
+                                    directionsBackFile.name
+                                ) {}
+                            }
+                            out.buffered().use {
+                                it.writePreviousRide(track, System.currentTimeMillis(), null)
+                            }
+
+                            add.await()
+                        }
+
+                        addedRide?.let {
+                            PreviousRidesRepository[app].showOnMap(it)
+                        }
                     }
                 }
             }

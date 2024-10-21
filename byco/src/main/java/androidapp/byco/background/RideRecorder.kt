@@ -37,6 +37,7 @@ import androidapp.byco.RECORDINGS_DIRECTORY
 import androidapp.byco.data.GpxSerializer
 import androidapp.byco.data.LocationRepository
 import androidapp.byco.data.PhoneStateRepository
+import androidapp.byco.data.PreviousRide
 import androidapp.byco.data.RideRecordingRepository
 import androidapp.byco.lib.R
 import androidapp.byco.ui.RidingActivity
@@ -520,7 +521,7 @@ class RideRecorder : BycoService() {
                 // Convert temporary recording into gpx.zip
                 File(
                     filesDir,
-                    "${RideRecordingRepository[app].recordingId}.gpx.zip"
+                    "${PreviousRide.RECORDING_FILE_NAME_PREFIX}${RideRecordingRepository[app].recordingId}.gpx.zip"
                 ).apply {
                     outputStream().buffered().use { fileOs ->
                         ZipOutputStream(fileOs).use { zipOs ->

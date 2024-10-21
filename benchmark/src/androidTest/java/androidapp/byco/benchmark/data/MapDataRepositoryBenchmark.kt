@@ -18,6 +18,7 @@ package androidapp.byco.benchmark.data
 
 import androidapp.byco.BycoApplication
 import androidapp.byco.data.MapDataRepository
+import androidapp.byco.data.MapTileKey
 import androidapp.byco.data.Node
 import androidx.benchmark.junit4.BenchmarkRule
 import androidx.benchmark.junit4.measureRepeated
@@ -56,7 +57,7 @@ class MapDataRepositoryBenchmark {
 
         // Make sure data is cached on disk
         runBlocking {
-            repo.getMapDataTile(minLat to minLon).first()
+            repo.getMapDataTile(MapTileKey(minLat, minLon)).first()
         }
     }
 
@@ -95,12 +96,12 @@ class MapDataRepositoryBenchmark {
 
         // Make sure data is cached on disk
         runBlocking {
-            repo.getMapDataTile(minLat to minLon).first()
+            repo.getMapDataTile(MapTileKey(minLat, minLon)).first()
         }
 
         benchmarkRule.measureRepeated {
             runBlocking {
-                repo.getMapDataTile(minLat to minLon).first()
+                repo.getMapDataTile(MapTileKey(minLat, minLon)).first()
             }
         }
     }
@@ -111,12 +112,12 @@ class MapDataRepositoryBenchmark {
 
         // Make sure data is cached in memory
         runBlocking {
-            repo.getMapDataTile(minLat to minLon).first()
+            repo.getMapDataTile(MapTileKey(minLat, minLon)).first()
         }
 
         benchmarkRule.measureRepeated {
             runBlocking {
-                repo.getMapDataTile(minLat to minLon).first()
+                repo.getMapDataTile(MapTileKey(minLat, minLon)).first()
             }
         }
     }

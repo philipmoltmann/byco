@@ -16,11 +16,8 @@
 
 package androidapp.byco.data
 
-import androidapp.byco.BycoApplication
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import lib.gpx.GpxParser
 import lib.gpx.MapArea
@@ -53,6 +50,8 @@ class PreviousRide(
     /** Rectangular area the ride is in */
     val area = MapArea(track.minLat, track.minLon, track.maxLat, track.maxLon)
 
+    val isDirectionsHome = file.name.startsWith(DIRECTIONS_HOME_FILE_PREFIX)
+
     override fun equals(other: Any?): Boolean {
         if (this === other) {
             return true
@@ -75,6 +74,10 @@ class PreviousRide(
     }
 
     companion object {
+        const val RECORDING_FILE_NAME_PREFIX = "recording-"
+        const val IMPORTED_FILE_FILE_PREFIX = "import-"
+        const val DIRECTIONS_HOME_FILE_PREFIX = "directionsHome-"
+
         suspend fun parseFrom(file: File): PreviousRide {
             ZipInputStream(file.inputStream().buffered()).use { zipIs ->
                 val gpx = zipIs.findFirstNotNull { entry ->
@@ -103,23 +106,21 @@ class PreviousRide(
     }
 }
 
-/** Load the data for the [ride] and write to the output stream.
+/** Write the data for the [ride] to the output stream.
  *
  * @param removeStart Meters to remove from start of ride
  * @param removeEnd Meters to remove from end of ride
  */
 suspend fun OutputStream.writePreviousRide(
-    app: BycoApplication,
-    ride: PreviousRide,
-    title: String? = ride.title,
+    track: Track,
+    time: Long?,
+    title: String?,
     removeStart: Float = 0f,
     removeEnd: Float = 0f,
 ) {
-    val track = PreviousRidesRepository[app].getTrack(ride).filterNotNull().first()
-
     // Do not cancel while overwriting file to avoid corruption.
     withContext(Dispatchers.IO + NonCancellable) {
-        GpxSerializer(this@writePreviousRide, title, ride.time).use { gpx ->
+        GpxSerializer(this@writePreviousRide, title, time).use { gpx ->
             var isFirstSegment = true
 
             // find first and last loc to write

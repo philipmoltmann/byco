@@ -106,31 +106,39 @@ class RidingActivity : BycoActivity(ProcessPriority.RIDING) {
         binding.overflowMenu.setOnClickListener {
             binding.previousRidesCoach.neverShowAgain()
 
-            val popup = PopupMenu(this, binding.overflowMenu)
+            val popup = PopupMenu(this@RidingActivity, binding.overflowMenu)
             popup.menuInflater.inflate(R.menu.riding_activity, popup.menu)
-
-            popup.menu.findItem(R.id.stop_showing).isVisible =
-                viewModel.isShowingTrack.value == true
-
-            popup.menu.findItem(R.id.clear_directions).isVisible =
-                viewModel.isShowingDirectionsBack.value == true
-
-            popup.menu.findItem(R.id.reset_estimated_ride).isVisible =
-                viewModel.isEstimatedRideOngoing.value == true
-
-            popup.setOnMenuItemClickListener { menuItem ->
-                when (menuItem.itemId) {
-                    R.id.rides -> viewModel.showPreviousRides(this)
-                    R.id.stop_showing -> viewModel.hideTrack()
-                    R.id.clear_directions -> viewModel.clearDirectionsBack()
-                    R.id.reset_estimated_ride -> viewModel.resetEstimatedRide()
-                    R.id.help -> viewModel.showHelp(this)
-                    R.id.about -> viewModel.showAbout(this)
-                }
-
-                true
-            }
             popup.show()
+
+            val updatePopupMenu = lifecycleScope.launch(Main.immediate) {
+                repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    (viewModel.isShowingTrack + viewModel.isShowingDirectionsBack + viewModel.isEstimatedRideOngoing)
+                        .collect { (isShowingTrack, isShowingDirectionsBack, isEstimatedRideOngoing) ->
+                            popup.menu.findItem(R.id.stop_showing).isVisible =
+                                isShowingTrack == true && isShowingDirectionsBack == false
+
+                            popup.menu.findItem(R.id.clear_directions).isVisible =
+                                isShowingDirectionsBack == true
+
+                            popup.menu.findItem(R.id.reset_estimated_ride).isVisible =
+                                isEstimatedRideOngoing == true
+
+                            popup.setOnMenuItemClickListener { menuItem ->
+                                when (menuItem.itemId) {
+                                    R.id.rides -> viewModel.showPreviousRides(this@RidingActivity)
+                                    R.id.stop_showing -> viewModel.hideTrack()
+                                    R.id.clear_directions -> lifecycleScope.launch { viewModel.clearDirectionsBack() }
+                                    R.id.reset_estimated_ride -> viewModel.resetEstimatedRide()
+                                    R.id.help -> viewModel.showHelp(this@RidingActivity)
+                                    R.id.about -> viewModel.showAbout(this@RidingActivity)
+                                }
+
+                                true
+                            }
+                        }
+                }
+            }
+            popup.setOnDismissListener { updatePopupMenu.cancel() }
         }
 
         binding.directionsBack.setOnClickListener {

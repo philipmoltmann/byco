@@ -102,8 +102,10 @@ class GpxSerializer(
         tag(TRKPT_TAG) {
             attr(LAT_ATTR, "%.6f".format(usLocale, location.latitude))
             attr(LON_ATTR, "%.6f".format(usLocale, location.longitude))
-            tag(ELE_TAG) {
-                text("%.2f".format(usLocale, location.elevation))
+            location.elevation?.let { elevation ->
+                tag(ELE_TAG) {
+                    text("%.2f".format(usLocale, elevation))
+                }
             }
             location.time?.let { time ->
                 time(time)
