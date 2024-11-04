@@ -316,7 +316,7 @@ class MapDataRepository private constructor(
     fun getMapData(
         mapArea: MapArea,
         returnPartialData: Boolean = false,
-        loadStreetNames: Boolean = true,
+        loadStreetNames: Boolean = false,
         reuseNodes: Collection<Node> = emptyList(),
         lowPriority: Boolean = false
     ) = channelFlow {

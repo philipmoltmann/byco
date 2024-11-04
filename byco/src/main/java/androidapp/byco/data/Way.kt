@@ -163,8 +163,12 @@ class Way(
     }
 
     override fun toString(): String {
-        return "Way(id=$id, isOpen=$isOpen, highway=$highway, name=$name, bicycle=$bicycle " +
-                "surface=$surface service=$service nodes=${nodes.map { it.id }})"
+        return "Way(id=$id, isOpen=$isOpen, isOneWay=$isOneway, highway=$highway, name=$name, " +
+                "bicycle=$bicycle surface=$surface service=$service nodes=${nodes.map { it.id }})"
+    }
+
+    fun isRealWay(): Boolean {
+        return id >= 0
     }
 }
 

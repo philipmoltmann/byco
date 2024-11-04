@@ -279,8 +279,6 @@ class Prefetcher(
                                             }.flatten().asFlow().flatMapMerge(2) { renderArea ->
                                                 MapDataRepository[app].getMapData(
                                                     renderArea,
-                                                    returnPartialData = false,
-                                                    loadStreetNames = false,
                                                     lowPriority = true
                                                 ).map { renderArea to it }.take(1)
                                             }.collect { (renderArea, mapData) ->

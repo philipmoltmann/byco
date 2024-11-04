@@ -233,8 +233,6 @@ class ConfirmDirectionsActivityViewModel(
 
                         val mapData = MapDataRepository[app].getMapData(
                             renderArea,
-                            returnPartialData = false,
-                            loadStreetNames = false,
                             lowPriority = true
                         ).first()
 

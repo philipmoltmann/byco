@@ -142,7 +142,7 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
             hadData = false
             flowOf(emptySet())
         } else {
-            MapDataRepository[app].getMapData(newMapArea, !hadData).onEach {
+            MapDataRepository[app].getMapData(newMapArea, returnPartialData = !hadData).onEach {
                 hadData = it.isNotEmpty()
             }
         }
@@ -499,10 +499,6 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
             activity.registerForActivityResult(StartActivityForResult()) { result: ActivityResult ->
                 if (result.resultCode == RESULT_OK) {
                     viewModelScope.launch {
-                        // Unload any currently shown track
-                        PreviousRidesRepository[app].showOnMap(null)
-                        clearDirectionsBack()
-
                         val directionsBack =
                             result.data!!.getParcelableArrayListExtraCompat(
                                 ConfirmDirectionsActivityViewModel.EXTRA_DIRECTIONS,

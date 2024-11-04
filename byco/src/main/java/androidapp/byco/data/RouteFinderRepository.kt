@@ -52,7 +52,6 @@ import androidapp.byco.util.plus
 import androidapp.byco.util.stateIn
 import kotlinx.coroutines.Dispatchers.Default
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
@@ -60,7 +59,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.withTimeout
 import lib.gpx.BasicLocation
 import lib.gpx.DebugLog
 import lib.gpx.MapArea
@@ -120,8 +118,6 @@ class RouteFinderRepository internal constructor(
 ) : Repository(app) {
     private val TAG = RouteFinderRepository::class.java.simpleName
 
-    private val elevationDataRepo = ElevationDataRepository[app]
-
     /**
      * Location of start of ride, preferrably [RideRecordingRepository.rideStart] but can also be
      * [RideEstimator.rideStart] is no ride is being recorded.
@@ -170,19 +166,6 @@ class RouteFinderRepository internal constructor(
         providedCountryCode: CountryCode = null,
         postIntermediateUpdates: Boolean = true
     ) = flow {
-        /**
-         * Small local cache as we often search along a path and hence a neighbor might be the
-         * next node
-         */
-        val elevationCache = mutableMapOf<Long, Float>()
-
-        /**
-         * Elevation data for currently searched tile.
-         *
-         * Put in temporary data as real data will be loaded in the first iteration of this loop
-         */
-        var currentElevations: ElevationData? = null
-
         /** Round double to a [BigDecimal] so it is the edge of a map tile */
         fun Double.roundToBigDecimalMapTileScale(): BigDecimal {
             return toBigDecimal().setScale(MapDataRepository.TILE_SCALE, HALF_UP)
@@ -198,141 +181,114 @@ class RouteFinderRepository internal constructor(
             return toBigDecimal().setScale(MapDataRepository.TILE_SCALE, CEILING)
         }
 
-        /** Round double to a [BigDecimal] so it is the lower edge of a elevation tile */
-        fun Double.floorToBigDecimalElevationTileScale(): BigDecimal {
-            return toBigDecimal().setScale(ElevationDataRepository.TILE_SCALE, FLOOR)
-        }
+        data class WaySegment(
+            val start: Node,
+            val end: Node,
+            val way: Way
+        )
 
-        /** Round double to a [BigDecimal] so it is the upper edge of a elevation tile */
-        fun Double.ceilToBigDecimalElevationTileScale(): BigDecimal {
-            return toBigDecimal().setScale(ElevationDataRepository.TILE_SCALE, CEILING)
-        }
-
-        /** Get all tuples of [Node]s that are connected a bikeable [Way] in this [MapData]. */
-        fun MapData.asSegments(): List<Pair<Node, Node>> {
+        /** Get all `WaySegment`s that are connected a bikeable [Way] in this [MapData]. */
+        fun MapData.asSegments(): List<WaySegment> {
             return filter { it.bicycle == null || it.bicycle.isAllowed }.flatMap { way ->
                 way.nodesArray.indices.mapNotNull { i ->
                     if (i == 0) {
                         null
                     } else {
-                        way.nodesArray[i - 1] to way.nodesArray[i]
+                        WaySegment(way.nodesArray[i - 1], way.nodesArray[i], way)
                     }
                 }
             }
         }
 
         fun MapData.getClosestPointsOnSegments(loc: BasicLocation):
-                List<Pair<Pair<Node, Node>, Node>> {
+                List<Pair<WaySegment, Node>> {
             val node = loc.toNode()
 
-            return asSegments().map { (segmentStart, segmentEnd) ->
-                (segmentStart to segmentEnd) to node.closestNodeOn(segmentStart, segmentEnd)
-                    .toNode()
+            return asSegments().map { segment ->
+                segment to node.closestNodeOn(segment.start, segment.end).toNode()
             }
         }
 
-        /** Get travel effort from a [Node] to its direct [neighbor] on [way] */
-        fun Node.to(neighbor: Node, way: Way): Float {
-            // Don't compute real spherical distance. Just assume flat map. This is good enough for
-            // any bikeable distance.
+        /**
+         * Don't compute real spherical distance. Just assume flat map. This is good enough for
+         * any bikeable distance.
+         */
+        fun Node.mapDistanceTo(neighbor: Node): Double {
             val latDiff = latitude - neighbor.latitude
             val lonDiff = longitude - neighbor.longitude
-            val distance = sqrt(latDiff * latDiff + lonDiff * lonDiff).toFloat()
+            return sqrt(latDiff * latDiff + lonDiff * lonDiff)
+        }
 
-            // Don't build up too much unnecessary data in elevationCache. Quick reuse is
-            // common. Reuse after some time makes the cache very large and the memory overhead
-            // is not worth the additional hits.
-            if (elevationCache.size > 10) {
-                elevationCache.clear()
-            }
-
-            // TODO: Some segments might be quite short.  Maybe consider adjacent segments too?
-            val grade = currentElevations?.let { currentElevations ->
-                try {
-                    (elevationCache.getOrPut(neighbor.id) {
-                        currentElevations.getElevation(neighbor)
-                    } - elevationCache.getOrPut(id) {
-                        currentElevations.getElevation(this)
-                    }) / distance
-                } catch (e: Throwable) {
-                    DebugLog.e(TAG, "Cannot get grade $this -> $neighbor", e)
-                    0f
-                }
-            }
-            // The elevation data provider might be down
-                ?: 0f
-
-            val gradeFactor = when {
-                grade > 0.06f -> 2f
-                else -> 1f
-            }
-
+        /** Get travel effort from a [Node] to its direct [neighbor] on [way] */
+        fun Node.to(neighbor: Node, way: Way): Double {
             // use country code of start as otherwise the resolving will really slow us down
             val wayFactor =
                 if (!(way.bicycle?.isAllowed ?: (way.highway?.areBicyclesAllowedByDefault(
                         providedCountryCode
                     ) == true))
                 ) {
-                    Float.POSITIVE_INFINITY
+                    return Double.POSITIVE_INFINITY
                 } else if (way.bicycle == DESIGNATED) {
-                    1f
+                    1.0
                 } else if (way.bicycle == DISMOUNT) {
-                    5f
+                    5.0
                 } else if (way.surface?.isCycleable == false) {
                     // Assume cycleable unless specified otherwise
-                    Float.POSITIVE_INFINITY
+                    return Double.POSITIVE_INFINITY
                 } else {
                     when (way.highway) {
                         // Discourage generated ways to force route onto real roads asap
-                        GENERATED -> 100f
+                        GENERATED -> 100.0
                         CYCLEWAY ->
                             // Assume paved and cyclable unless specified otherwise
-                            return when {
-                                way.surface?.isPaved != false -> 1f
-                                way.surface.isCycleable -> 3f
-                                else -> Float.POSITIVE_INFINITY
+                             when {
+                                way.surface?.isPaved != false -> 1.0
+                                way.surface.isCycleable -> 3.0
+                                else -> return Double.POSITIVE_INFINITY
                             }
 
                         MOTORWAY, TRUNK, PRIMARY, SECONDARY, LIVING_STEET,
-                        MOTORWAY_LINK, TRUNK_LINK, PRIMARY_LINK, SECONDARY_LINK -> 1.6f
+                        MOTORWAY_LINK, TRUNK_LINK, PRIMARY_LINK, SECONDARY_LINK -> 1.6
 
-                        TERTIARY, UNCLASSIFIED, RESIDENTIAL, TERTIARY_LINK, ROAD -> 1.2f
+                        TERTIARY, UNCLASSIFIED, RESIDENTIAL, TERTIARY_LINK, ROAD -> 1.2
                         PATH, PEDESTRIAN, TRACK, BRIDALWAY, FOOTWAY ->
-                            return when {
+                            when {
                                 // Assume unpaved and uncyclable unless specified otherwise
-                                way.surface?.isPaved == true -> 1f
-                                way.surface?.isCycleable == true -> 3f
-                                else -> Float.POSITIVE_INFINITY
+                                way.surface?.isPaved == true -> 1.1
+                                way.surface?.isCycleable == true -> 3.0
+                                else -> return Double.POSITIVE_INFINITY
                             }
 
                         SERVICE ->
                             when (way.service?.shouldBeShown) {
-                                (way.service == ALLEY) -> 1.6f
+                                (way.service == ALLEY) -> 1.6
                                 // All other types other than alley are not good paths
-                                (way.service != null) -> Float.POSITIVE_INFINITY
+                                (way.service != null) -> return Double.POSITIVE_INFINITY
                                 // Unnamed service ways are often driveways and the like
-                                (way.name == null) -> Float.POSITIVE_INFINITY
+                                (way.name == null) -> return Double.POSITIVE_INFINITY
                                 // Named services way without service type ar often basically
                                 // smaller streets. But as they are obviously not normal, rank
                                 // them quite low
-                                else -> 2f
+                                else -> 2.0
                             }
 
                         else -> throw IllegalStateException("Unknown way type $way.highway")
                     }
                 }
 
-            return gradeFactor * wayFactor * distance
+            val distance = mapDistanceTo(neighbor)
+
+            return wayFactor * distance
         }
 
         /** Estimate the travel effort from a [Node] to an [other] node */
-        fun Node.estTo(other: Node): Float {
+        fun Node.estTo(other: Node): Double {
             // By over-estimating the distance we can save time investigating very unlikely routes
             // as almost always there is some kind in the route between two points. Setting a factor
             // of 1.55 seems to save about 25% of runtime.
             //
             // But for now optimize for quality.
-            return distanceTo(other)
+            return mapDistanceTo(other)
         }
 
         val startTime = SystemClock.elapsedRealtime()
@@ -346,7 +302,8 @@ class RouteFinderRepository internal constructor(
                         (startLoc.longitude - GENERATED_WAYS_MAP_TILE_SIZE / 2).floorToBigDecimalMapTileScale(),
                         (startLoc.latitude + GENERATED_WAYS_MAP_TILE_SIZE / 2).ceilToBigDecimalMapTileScale(),
                         (startLoc.longitude + GENERATED_WAYS_MAP_TILE_SIZE / 2).ceilToBigDecimalMapTileScale()
-                    )
+                    ),
+                    loadStreetNames = true
                 ).first().getClosestPointsOnSegments(startLoc)
                     .filter { (_, closesNode) ->
                         closesNode.distanceTo(start) < MAX_OFF_PATH
@@ -364,7 +321,8 @@ class RouteFinderRepository internal constructor(
                         (goalLoc.longitude - GENERATED_WAYS_MAP_TILE_SIZE / 2).floorToBigDecimalMapTileScale(),
                         (goalLoc.latitude + GENERATED_WAYS_MAP_TILE_SIZE / 2).ceilToBigDecimalMapTileScale(),
                         (goalLoc.longitude + GENERATED_WAYS_MAP_TILE_SIZE / 2).ceilToBigDecimalMapTileScale()
-                    )
+                    ),
+                    loadStreetNames = true
                 ).first().getClosestPointsOnSegments(goalLoc)
                     .filter { (_, closesNode) ->
                         closesNode.distanceTo(goal) < MAX_OFF_PATH
@@ -382,17 +340,28 @@ class RouteFinderRepository internal constructor(
         }
 
         fun generateWaysFromSegmentsToNode(
-            segments: List<Pair<Pair<Node, Node>, Node>>,
-            node: Node
+            segments: List<Pair<WaySegment, Node>>,
+            node: Node,
+            backwards: Boolean = false
         ): List<Way> {
             return segments.flatMap { (segment, closestNode) ->
-                val (segmentStart, segmentEnd) = segment
+                val segmentStart = segment.start
+                val segmentEnd = segment.end
+
+                fun getNodeArray(node1: Node, node2: Node): Array<Node> =
+                    if (backwards) {
+                        arrayOf(node2, node1)
+                    } else {
+                        arrayOf(node1, node2)
+                    }
+
                 when (closestNode) {
                     segmentStart -> {
                         listOf(
                             Way(
                                 highway = GENERATED,
-                                nodesArray = arrayOf(node, segmentStart)
+                                nodesArray = getNodeArray(segmentStart, node),
+                                isOneway = true
                             )
                         )
                     }
@@ -401,26 +370,52 @@ class RouteFinderRepository internal constructor(
                         listOf(
                             Way(
                                 highway = GENERATED,
-                                nodesArray = arrayOf(node, segmentEnd)
+                                nodesArray = getNodeArray(segmentEnd, node),
+                                isOneway = true
                             )
                         )
                     }
 
                     else -> {
-                        listOf(
+                        val ways = mutableListOf(
                             Way(
                                 highway = GENERATED,
-                                nodesArray = arrayOf(node, closestNode)
-                            ),
-                            Way(
-                                highway = GENERATED,
-                                nodesArray = arrayOf(closestNode, segmentStart)
-                            ),
-                            Way(
-                                highway = GENERATED,
-                                nodesArray = arrayOf(closestNode, segmentEnd)
+                                nodesArray = getNodeArray(closestNode, node),
+                                isOneway = true
                             )
                         )
+
+                        val startToClosest = Way(
+                            highway = segment.way.highway,
+                            bicycle = segment.way.bicycle,
+                            service = segment.way.service,
+                            surface = segment.way.surface,
+                            name = segment.way.name,
+                            nodesArray = getNodeArray(segmentStart, closestNode),
+                            isOneway = true
+                        )
+
+                        val endToClosest = Way(
+                            highway = segment.way.highway,
+                            bicycle = segment.way.bicycle,
+                            service = segment.way.service,
+                            surface = segment.way.surface,
+                            name = segment.way.name,
+                            nodesArray = getNodeArray(segmentEnd, closestNode),
+                            isOneway = true
+                        )
+
+                        if (segment.way.isOneway) {
+                            ways += if (backwards) {
+                                endToClosest
+                            } else {
+                                startToClosest
+                            }
+                        } else {
+                            ways += listOf(startToClosest, endToClosest)
+                        }
+
+                        ways
                     }
                 }.onEach { way ->
                     way.nodesArray.forEach { node ->
@@ -431,13 +426,13 @@ class RouteFinderRepository internal constructor(
         }
 
         /** Generate ways from start to nearby real OSM nodes */
-        val startWays = generateWaysFromSegmentsToNode(startSegments, start)
+        val startWays = generateWaysFromSegmentsToNode(startSegments, start, backwards = true)
 
         /** Generate ways from start to nearby real OSM nodes */
         val goalWays = generateWaysFromSegmentsToNode(goalSegments, goal)
 
         // Best guess of the travel effort from start to node to goal
-        val estStartToNodeToGoal = HashMap<Long, Float>()
+        val estStartToNodeToGoal = HashMap<Long, Double>()
         estStartToNodeToGoal[start.id] = start.estTo(goal)
         val hasLessEstStartToNodeToGoal =
             Comparator<Node> { a, b ->
@@ -481,18 +476,16 @@ class RouteFinderRepository internal constructor(
 
         // Travel effort of best known route from start to node (get route via
         // [getRouteFromStart])
-        val bestStartToNode = HashMap<Long, Float>()
-        bestStartToNode[start.id] = 0f
+        val bestStartToNode = HashMap<Long, Double>()
+        bestStartToNode[start.id] = 0.0
 
         // Time of last intermediate update of route
         var lastIntermediateUpdate = SystemClock.elapsedRealtime()
         // How far is the best known route away from the goal
-        var bestRouteFromGoal = start.distanceTo(goal)
+        var bestRouteFromGoal = start.mapDistanceTo(goal)
 
         // Tile the [current] node is in
         var currentTile = -1L
-
-        var useElevationData = true
 
         var checkedNodes = 0
         var checkedTiles = 0
@@ -510,11 +503,11 @@ class RouteFinderRepository internal constructor(
 
             // Occasionally post intermediate updates (to show search progress to user)
             if (postIntermediateUpdates
-                && current.distanceTo(goal) < bestRouteFromGoal
+                && current.mapDistanceTo(goal) < bestRouteFromGoal
                 && SystemClock.elapsedRealtime() - lastIntermediateUpdate
                 > SECONDS.toMillis(1)
             ) {
-                bestRouteFromGoal = current.distanceTo(goal)
+                bestRouteFromGoal = current.mapDistanceTo(goal)
                 lastIntermediateUpdate = SystemClock.elapsedRealtime()
 
                 emit(current.getRouteFromStart())
@@ -525,7 +518,7 @@ class RouteFinderRepository internal constructor(
                     return
                 }
 
-                val generated = filter { it.highway == GENERATED }
+                val generated = filter { !it.isRealWay() }
                 clear()
                 addAll(generated)
             }
@@ -582,58 +575,14 @@ class RouteFinderRepository internal constructor(
                                             goalWays.flatMap { it.nodes } +
                                             goal).filter {
                                         it.toTileKey() == currentTile
-                                    }
+                                    },
+                                    loadStreetNames = true
                         ).first()
                     }
                 }
 
-                // Elevation tile needs to contain area around the map tile as ways might
-                // slightly leave the tile
-                val newElevationsArea = MapArea(
-                    latitude - MAP_TILE_SIZE,
-                    longitude - MAP_TILE_SIZE,
-                    latitude + 2 * MAP_TILE_SIZE,
-                    longitude + 2 * MAP_TILE_SIZE
-                )
-
-                val currentTileElevationUpdate =
-                    if (useElevationData
-                        && currentElevations?.area?.contains(newElevationsArea) != true
-                    ) {
-                        coroutineScope {
-                            async {
-                                try {
-                                    withTimeout(OpenTopographyDataProvider[app].READ_TIMEOUT) {
-                                        currentElevations =
-                                            elevationDataRepo.getElevationData(
-                                                MapArea(
-                                                    newElevationsArea.minLatD
-                                                        .floorToBigDecimalElevationTileScale(),
-                                                    newElevationsArea.minLonD
-                                                        .floorToBigDecimalElevationTileScale(),
-                                                    newElevationsArea.maxLatD
-                                                        .ceilToBigDecimalElevationTileScale(),
-                                                    newElevationsArea.maxLonD
-                                                        .ceilToBigDecimalElevationTileScale()
-                                                )
-                                            ).first()
-                                    }
-                                } catch (e: TimeoutCancellationException) {
-                                    // Only every wait for a single timeout, otherwise
-                                    // every single time would take
-                                    // ELEVATION_DATA_PROVIDER_TIMEOUT to load.
-                                    currentElevations = null
-                                    useElevationData = false
-                                }
-                            }
-                        }
-                    } else {
-                        null
-                    }
-
                 // Wait for data to update
                 mapDataUpdate.await()
-                currentTileElevationUpdate?.await()
             }
 
             // Check if we found a route
@@ -680,7 +629,7 @@ class RouteFinderRepository internal constructor(
                     bestStartToNode[current.id]!! + current.to(neighbor, way)
 
                 if (startToCurrentToNeighbor <
-                    (bestStartToNode[neighbor.id] ?: Float.POSITIVE_INFINITY)
+                    (bestStartToNode[neighbor.id] ?: Double.POSITIVE_INFINITY)
                 ) {
                     bestPrevNode[neighbor.id] = current.toPreviousNode()
 
