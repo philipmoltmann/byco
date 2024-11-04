@@ -21,10 +21,12 @@ import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
+import android.view.View
 import android.view.View.GONE
 import android.view.View.INVISIBLE
 import android.view.View.VISIBLE
 import android.view.ViewGroup
+import android.view.ViewGroup.MarginLayoutParams
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidapp.byco.data.PreviousRide
@@ -41,6 +43,9 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.SearchView
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -73,6 +78,25 @@ class PreviousRidesActivity : BycoActivity() {
 
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { v: View, insets: WindowInsetsCompat ->
+            val params = v.layoutParams as MarginLayoutParams
+            params.topMargin = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
+            v.updatePadding(right = insets.getInsets(WindowInsetsCompat.Type.systemBars()).right)
+            v.updatePadding(left = insets.getInsets(WindowInsetsCompat.Type.systemBars()).left)
+            v.updatePadding(right = insets.getInsets(WindowInsetsCompat.Type.tappableElement()).right)
+            v.updatePadding(left = insets.getInsets(WindowInsetsCompat.Type.tappableElement()).left)
+            insets
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.rides) { v: View, insets: WindowInsetsCompat ->
+            v.updatePadding(bottom = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom)
+            v.updatePadding(right = insets.getInsets(WindowInsetsCompat.Type.systemBars()).right)
+            v.updatePadding(left = insets.getInsets(WindowInsetsCompat.Type.systemBars()).left)
+            v.updatePadding(right = insets.getInsets(WindowInsetsCompat.Type.tappableElement()).right)
+            v.updatePadding(left = insets.getInsets(WindowInsetsCompat.Type.tappableElement()).left)
+            insets
+        }
 
         class PreviousRideHolder(
             val view: PreviousRideListItemBinding,

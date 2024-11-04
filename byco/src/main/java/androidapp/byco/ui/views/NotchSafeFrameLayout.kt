@@ -18,6 +18,7 @@ package androidapp.byco.ui.views
 
 import android.content.Context
 import android.graphics.Rect
+import android.os.Build
 import android.util.AttributeSet
 import android.view.WindowInsets
 import android.widget.FrameLayout
@@ -59,8 +60,8 @@ class NotchSafeFrameLayout(
     private enum class AddPadding {
         LEFT,
         TOP,
-        BOTTOM,
         RIGHT,
+        BOTTOM,
         START,
         END
     }
@@ -140,7 +141,19 @@ class NotchSafeFrameLayout(
 
     override fun onApplyWindowInsets(insets: WindowInsets?): WindowInsets {
         this.cutouts =
-            insets?.let { WindowInsetsCompat.toWindowInsetsCompat(it).displayCutout?.boundingRects }
+            insets?.let {
+                val cutouts =
+                    WindowInsetsCompat.toWindowInsetsCompat(it).displayCutout?.boundingRects?.toMutableList()
+                        ?: mutableListOf()
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                    cutouts += insets.getBoundingRects(WindowInsets.Type.systemBars())
+                    cutouts += insets.getBoundingRects(WindowInsets.Type.tappableElement())
+                }
+
+                cutouts
+            }
+
 
         return super.onApplyWindowInsets(insets)
     }

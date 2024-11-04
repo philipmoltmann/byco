@@ -25,16 +25,6 @@
         <item name="alertDialogTheme">@style/Theme.Byco.InlineDialog</item>
     </style>
 
-    <style name="Theme.Byco.ActionBar" parent="Theme.AppCompat.DayNight">
-        <item name="android:statusBarColor">?android:colorBackground</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:alertDialogTheme">@style/Theme.Byco.InlineDialog</item>
-        <item name="android:colorBackground">@color/windowBackground</item>
-        <item name="alertDialogTheme">@style/Theme.Byco.InlineDialog</item>
-        <item name="android:actionBarStyle">@style/BycoActionBar</item>
-        <item name="actionBarStyle">@style/BycoActionBar</item>
-    </style>
-
     <style name="Theme.Byco.InlineDialog" parent="Theme.Byco.BaseDialog">
         <item name="android:colorAccent">@color/accent</item>
         <item name="colorAccent">@color/accent</item>

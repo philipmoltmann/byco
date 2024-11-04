@@ -16,9 +16,14 @@
 package androidapp.byco.ui
 
 import android.os.Bundle
+import android.view.View
+import android.view.ViewGroup.MarginLayoutParams
 import androidapp.byco.lib.R
 import androidapp.byco.lib.databinding.AppLicenseActivityBinding
 import androidapp.byco.util.BycoActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 
 class AppLicenseActivity : BycoActivity() {
     private lateinit var binding: AppLicenseActivityBinding
@@ -31,6 +36,25 @@ class AppLicenseActivity : BycoActivity() {
 
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { v: View, insets: WindowInsetsCompat ->
+            val params = v.layoutParams as MarginLayoutParams
+            params.topMargin = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
+            v.updatePadding(right = insets.getInsets(WindowInsetsCompat.Type.systemBars()).right)
+            v.updatePadding(left = insets.getInsets(WindowInsetsCompat.Type.systemBars()).left)
+            v.updatePadding(right = insets.getInsets(WindowInsetsCompat.Type.tappableElement()).right)
+            v.updatePadding(left = insets.getInsets(WindowInsetsCompat.Type.tappableElement()).left)
+            insets
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.license) { v: View, insets: WindowInsetsCompat ->
+            v.updatePadding(bottom = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom)
+            v.updatePadding(right = insets.getInsets(WindowInsetsCompat.Type.systemBars()).right)
+            v.updatePadding(left = insets.getInsets(WindowInsetsCompat.Type.systemBars()).left)
+            v.updatePadding(right = insets.getInsets(WindowInsetsCompat.Type.tappableElement()).right)
+            v.updatePadding(left = insets.getInsets(WindowInsetsCompat.Type.tappableElement()).left)
+            insets
+        }
 
         binding.license.text =
             resources.openRawResource(R.raw.app_license).use { it.readBytes().toString(Charsets.UTF_8) }
