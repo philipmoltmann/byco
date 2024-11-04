@@ -24,6 +24,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.net.Uri
+import android.os.SystemClock
+import android.util.Log
 import android.widget.Toast
 import androidapp.byco.data.ElevationDataRepository
 import androidapp.byco.data.LocationRepository
@@ -42,6 +44,7 @@ import androidapp.byco.ui.views.ElevationView
 import androidapp.byco.util.BycoViewModel
 import androidapp.byco.util.compat.getApplicationInfoCompat
 import androidapp.byco.util.compat.getParcelableArrayListExtraCompat
+import androidapp.byco.util.everySecond
 import androidapp.byco.util.plus
 import androidapp.byco.util.stateIn
 import androidapp.byco.util.whenNotChangedFor
@@ -55,9 +58,13 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -83,7 +90,11 @@ import kotlin.time.Duration.Companion.seconds
 @OptIn(ExperimentalCoroutinesApi::class)
 class RidingActivityViewModel(application: Application, val state: SavedStateHandle) :
     BycoViewModel(application) {
+    private val TAG = RidingActivityViewModel::class.java.simpleName
+
     private val KEY_PREVIOUS_RIDE_SHOWN = "KEY_DIRECTIONS_BACK"
+
+    private val DIRECTIONS_BACK_RECALCULATE_DELAY = 20.0.seconds
 
     private val mapAreaUpdate = Channel<MapArea>()
     private val mapArea = mapAreaUpdate.receiveAsFlow().stateIn(null)
@@ -195,7 +206,7 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
                     null
                 }
             }
-        }
+        }.stateIn(null)
 
     /**
      * Elevation profile of current climb
@@ -232,6 +243,63 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
                         PreviousRidesRepository[app].delete(previousRide)
                     }
                 }
+        }
+
+        // If directions home are shown, update the directions if location goes off track.
+        viewModelScope.launch {
+            var lastRouteUpdate = 0L
+
+            (channelFlow {
+                // Cancel recalculation due to `collectLatest` if directions back become invalid.
+                (RouteFinderRepository[app].rideStart + countryCode + /* isOfftrack = */ bearingToTrack.map { it != null } + isShowingDirectionsBack)
+                    .distinctUntilChanged()
+                    .collectLatest { (rideStart, countryCode, isOffTrack, isShowingDirectionsBack) ->
+                        rideStart ?: return@collectLatest
+
+                        // Only need to recalculate directions home if they are currently shown and
+                        // if off the previous calculated track.
+                        if (!isShowingDirectionsBack || !isOffTrack) {
+                            return@collectLatest
+                        }
+
+                        // Don't cancel (i.e. just use `collect`) if current location changes as
+                        // otherwise the computation would never complete in time before the next
+                        // smoothedLocation or everySecond() comes in.
+                        (smoothedLocation.filterNotNull() + everySecond()).collect { (smoothedLocation, _) ->
+                            // Do not recalculate too often as this consumes a lot of CPU. As this
+                            // also listens to everySecond() we can just wait for the next update
+                            // instead of having to wait here.
+                            if (SystemClock.elapsedRealtime()
+                                < (lastRouteUpdate + DIRECTIONS_BACK_RECALCULATE_DELAY.inWholeMilliseconds)
+                            ) {
+                                return@collect
+                            }
+
+                            Log.d(TAG, "Off track while following directions home, recalculating.")
+
+                            val newDirectionsHome = RouteFinderRepository[app].findRoute(
+                                smoothedLocation.location,
+                                rideStart,
+                                countryCode,
+                                postIntermediateUpdates = false
+                            ).first()
+
+                            // Only update if new directions home were found.
+                            if (newDirectionsHome.isNotEmpty()) {
+                                send(newDirectionsHome)
+                            }
+
+                            lastRouteUpdate = SystemClock.elapsedRealtime()
+                        }
+                    }
+            } + isShowingDirectionsBack).collectLatest { (directionsBack, isShowingDirectionsBack) ->
+                // Make sure directions home are still showing before overriding them.
+                if (!isShowingDirectionsBack) {
+                    return@collectLatest
+                }
+
+                setDirectionsBack(directionsBack)
+            }
         }
     }
 
@@ -353,6 +421,44 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
         }
     }
 
+    private suspend fun setDirectionsBack(directionsBack: List<BasicLocation>) {
+        val track = Track(listOf(directionsBack.map {
+            RecordedLocation(
+                it.latitude,
+                it.longitude,
+                null,
+                null
+            )
+        }))
+
+        val addedRide = withContext(IO + NonCancellable) {
+            val directionsBackFile = File.createTempFile(
+                PreviousRide.DIRECTIONS_HOME_FILE_PREFIX,
+                GPX_ZIP_FILE_EXTENSION,
+                app.filesDir
+            )
+
+            // Add the directions back as a previous track with a special file name.
+            val ins = PipedInputStream()
+            val out = PipedOutputStream(ins)
+            val add = async {
+                PreviousRidesRepository[app].addRide(
+                    ins,
+                    directionsBackFile.name
+                ) {}
+            }
+            out.buffered().use {
+                it.writePreviousRide(track, System.currentTimeMillis(), null)
+            }
+
+            add.await()
+        }
+
+        addedRide?.let {
+            PreviousRidesRepository[app].showOnMap(it)
+        }
+    }
+
     /** Allow this view model to use the passed [activity] for start-with-activity-result */
     fun registerActivityResultsContracts(activity: AppCompatActivity) {
         getLocationPermissionLauncher =
@@ -392,8 +498,8 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
         getDirectionsBackLauncher =
             activity.registerForActivityResult(StartActivityForResult()) { result: ActivityResult ->
                 if (result.resultCode == RESULT_OK) {
-                    // Unload any currently shown track
                     viewModelScope.launch {
+                        // Unload any currently shown track
                         PreviousRidesRepository[app].showOnMap(null)
                         clearDirectionsBack()
 
@@ -403,41 +509,7 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
                                 BasicLocation::class.java
                             ) ?: return@launch
 
-                        val track = Track(listOf(directionsBack.map {
-                            RecordedLocation(
-                                it.latitude,
-                                it.longitude,
-                                null,
-                                null
-                            )
-                        }))
-
-                        val directionsBackFile = File.createTempFile(
-                            PreviousRide.DIRECTIONS_HOME_FILE_PREFIX,
-                            GPX_ZIP_FILE_EXTENSION,
-                            app.filesDir
-                        )
-
-                        // Add the directions back as a previous track with a special file name.
-                        val addedRide = withContext(IO) {
-                            val ins = PipedInputStream()
-                            val out = PipedOutputStream(ins)
-                            val add = async {
-                                PreviousRidesRepository[app].addRide(
-                                    ins,
-                                    directionsBackFile.name
-                                ) {}
-                            }
-                            out.buffered().use {
-                                it.writePreviousRide(track, System.currentTimeMillis(), null)
-                            }
-
-                            add.await()
-                        }
-
-                        addedRide?.let {
-                            PreviousRidesRepository[app].showOnMap(it)
-                        }
+                        setDirectionsBack(directionsBack)
                     }
                 }
             }

@@ -28,10 +28,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 private const val KEEP_STATE_WHILE_UNSUBSCRIBED = 2000L
 
@@ -114,5 +118,16 @@ inline fun <X, reified Y> Flow<Set<X>>.nestedFlowToMapFlow(
                 xtoys.toMap()
             }.collect { send(it) }
         }
+    }
+}
+
+/** Flow that updates every second. */
+fun everySecond() = flow {
+    var counter = 0L
+
+    while (coroutineContext.isActive) {
+        emit(counter)
+        counter++
+        delay(1.0.seconds)
     }
 }

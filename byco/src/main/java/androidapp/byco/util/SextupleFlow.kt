@@ -22,26 +22,23 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.combine
 
-data class Quintuple<out A, out B, out C, out D, out E>(
+data class Sextuple<out A, out B, out C, out D, out E, out F>(
     val first: A,
     val second: B,
     val third: C,
     val fourth: D,
-    val fifth: E
+    val fifth: E,
+    val sixth: F
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class QuintupleFlow<A, B, C, D, E>(
-    private val flowA: QuadrupleFlow<A, B, C, D>,
-    private val flowD: Flow<E>
-) : AbstractFlow<Quintuple<A, B, C, D, E>>() {
-    override suspend fun collectSafely(collector: FlowCollector<Quintuple<A, B, C, D, E>>) {
-        flowA.combine(flowD) { (a, b, c, d), e ->
-            Quintuple(a, b, c, d, e)
+class SextupleFlow<A, B, C, D, E, F>(
+    private val flowA: QuintupleFlow<A, B, C, D, E>,
+    private val flowF: Flow<F>
+) : AbstractFlow<Sextuple<A, B, C, D, E, F>>() {
+    override suspend fun collectSafely(collector: FlowCollector<Sextuple<A, B, C, D, E, F>>) {
+        flowA.combine(flowF) { (a, b, c, d, e), f ->
+            Sextuple(a, b, c, d, e, f)
         }.collect(collector)
-    }
-
-    operator fun <F> plus(flowF: Flow<F>): SextupleFlow<A, B, C, D, E, F> {
-        return SextupleFlow(this, flowF)
     }
 }
