@@ -29,6 +29,7 @@ import android.widget.TextView
 import androidapp.byco.lib.R
 import androidapp.byco.ui.views.CoachMarkView.ArrowDirection.*
 import androidx.core.content.res.getIntOrThrow
+import androidx.core.content.edit
 
 /** A tooltip that can be permanently dismissed */
 class CoachMarkView(
@@ -72,7 +73,7 @@ class CoachMarkView(
             defStyleAttr,
             defStyleRes
         )
-        val addPaddingAttr = ArrowDirection.values().find {
+        val addPaddingAttr = entries.find {
             it.ordinal == styledAttrs.getIntOrThrow(
                 R.styleable.CoachMarkView_arrowDirection,
             )
@@ -154,7 +155,7 @@ class CoachMarkView(
 
         val dismiss = OnClickListener {
             if (persistentId != null) {
-                prefs.edit().putBoolean(persistentId, true).apply()
+                prefs.edit { putBoolean(persistentId, true) }
             }
             view.visibility = GONE
         }
@@ -179,7 +180,7 @@ class CoachMarkView(
             throw IllegalArgumentException("persistentId is not set, cannot permanently hide")
         }
 
-        prefs.edit().putBoolean(persistentId, true).apply()
+        prefs.edit { putBoolean(persistentId, true) }
         view.visibility = GONE
     }
 }

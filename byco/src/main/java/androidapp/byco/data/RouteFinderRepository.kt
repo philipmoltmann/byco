@@ -29,6 +29,7 @@ import androidapp.byco.data.OsmDataProvider.HighwayType.LIVING_STEET
 import androidapp.byco.data.OsmDataProvider.HighwayType.MOTORWAY
 import androidapp.byco.data.OsmDataProvider.HighwayType.MOTORWAY_LINK
 import androidapp.byco.data.OsmDataProvider.HighwayType.PATH
+import androidapp.byco.data.OsmDataProvider.HighwayType.WATERWAY
 import androidapp.byco.data.OsmDataProvider.HighwayType.PEDESTRIAN
 import androidapp.byco.data.OsmDataProvider.HighwayType.PRIMARY
 import androidapp.byco.data.OsmDataProvider.HighwayType.PRIMARY_LINK
@@ -241,7 +242,7 @@ class RouteFinderRepository internal constructor(
                         GENERATED -> 100.0
                         CYCLEWAY ->
                             // Assume paved and cyclable unless specified otherwise
-                             when {
+                            when {
                                 way.surface?.isPaved != false -> 1.0
                                 way.surface.isCycleable -> 3.0
                                 else -> return Double.POSITIVE_INFINITY
@@ -271,6 +272,8 @@ class RouteFinderRepository internal constructor(
                                 // them quite low
                                 else -> 2.0
                             }
+
+                        WATERWAY -> return Double.POSITIVE_INFINITY
 
                         else -> throw IllegalStateException("Unknown way type $way.highway")
                     }
@@ -302,8 +305,7 @@ class RouteFinderRepository internal constructor(
                         (startLoc.longitude - GENERATED_WAYS_MAP_TILE_SIZE / 2).floorToBigDecimalMapTileScale(),
                         (startLoc.latitude + GENERATED_WAYS_MAP_TILE_SIZE / 2).ceilToBigDecimalMapTileScale(),
                         (startLoc.longitude + GENERATED_WAYS_MAP_TILE_SIZE / 2).ceilToBigDecimalMapTileScale()
-                    ),
-                    loadStreetNames = true
+                    )
                 ).first().getClosestPointsOnSegments(startLoc)
                     .filter { (_, closesNode) ->
                         closesNode.distanceTo(start) < MAX_OFF_PATH
@@ -321,8 +323,7 @@ class RouteFinderRepository internal constructor(
                         (goalLoc.longitude - GENERATED_WAYS_MAP_TILE_SIZE / 2).floorToBigDecimalMapTileScale(),
                         (goalLoc.latitude + GENERATED_WAYS_MAP_TILE_SIZE / 2).ceilToBigDecimalMapTileScale(),
                         (goalLoc.longitude + GENERATED_WAYS_MAP_TILE_SIZE / 2).ceilToBigDecimalMapTileScale()
-                    ),
-                    loadStreetNames = true
+                    )
                 ).first().getClosestPointsOnSegments(goalLoc)
                     .filter { (_, closesNode) ->
                         closesNode.distanceTo(goal) < MAX_OFF_PATH
@@ -575,8 +576,7 @@ class RouteFinderRepository internal constructor(
                                             goalWays.flatMap { it.nodes } +
                                             goal).filter {
                                         it.toTileKey() == currentTile
-                                    },
-                                    loadStreetNames = true
+                                    }
                         ).first()
                     }
                 }

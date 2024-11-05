@@ -22,10 +22,12 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
-import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.location.Location
-import android.os.FileObserver.*
+import android.os.FileObserver.CLOSE_WRITE
+import android.os.FileObserver.DELETE
+import android.os.FileObserver.MOVED_FROM
+import android.os.FileObserver.MOVED_TO
 import android.view.LayoutInflater
 import android.view.View
 import androidapp.byco.BycoApplication
@@ -40,6 +42,8 @@ import androidapp.byco.util.compat.WEBP_COMPAT
 import androidapp.byco.util.compat.createFileObserverCompat
 import androidapp.byco.util.plus
 import androidapp.byco.util.stateIn
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.drawable.toDrawable
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.awaitClose
@@ -202,7 +206,7 @@ class ThumbnailRepository private constructor(
         height: Int = THUMBNAIL_SIZE,
         trackColor: Int? = null
     ): Bitmap {
-        val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val image = createBitmap(width, height)
 
         val renderer = ThumbnailRenderer(rideArea, isDarkMode, clipArea, width, height)
         renderer.setMapData(countryCode, mapData, track, trackColor)
@@ -348,7 +352,7 @@ class ThumbnailRepository private constructor(
                 ride.area,
                 highlightedTrack.map { 0f to it.toTypedArray() },
                 isDarkMode,
-                background = BitmapDrawable(app.resources, thumbnail),
+                background = thumbnail.toDrawable(app.resources),
                 trackColor = app.getColor(R.color.removed_ride)
             )
         } ?: thumbnail
@@ -374,7 +378,7 @@ class ThumbnailRepository private constructor(
             } else {
                 PreviousRidesRepository[app].getTrack(ride).mapLatest { track ->
                     if (track == null) {
-                        Bitmap.createBitmap(1, 1, Bitmap.Config.ALPHA_8)
+                        createBitmap(1, 1, Bitmap.Config.ALPHA_8)
                     } else {
                         renderThumbnail(
                             null,

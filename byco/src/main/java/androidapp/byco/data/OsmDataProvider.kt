@@ -20,6 +20,7 @@ import android.util.Log
 import android.util.Xml
 import androidapp.byco.data.OsmDataProvider.BicycleType
 import androidapp.byco.data.OsmDataProvider.HighwayType
+import androidapp.byco.data.OsmDataProvider.WaterWayType
 import androidapp.byco.data.OsmDataProvider.OneWayType
 import androidapp.byco.data.OsmDataProvider.ServiceType
 import androidapp.byco.data.OsmDataProvider.SurfaceType
@@ -62,17 +63,7 @@ object OsmDataProvider {
         maxLat: BigDecimal,
         maxLon: BigDecimal
     ): String {
-        return """<osm-script>
-  <query type="way">
-    <has-kv k="highway"/>
-    <bbox-query s="$minLat" w="$minLon" n="$maxLat" e="$maxLon"/>
-  </query>
-  <union>
-    <item />
-    <recurse type="way-node"/>
-  </union>
-  <print order="quadtile"/>
-</osm-script>"""
+        return """(way["highway"]($minLat,$minLon,$maxLat,$maxLon);way["waterway"]($minLat,$minLon,$maxLat,$maxLon););(._;node(w););out qt;"""
     }
 
     /**
@@ -122,8 +113,15 @@ object OsmDataProvider {
 
                         DebugLog.w(
                             TAG,
-                            "Cannot communicate with $dataSource($minLat, $minLon); will "
-                                    + "retry in $incrementalBackoffTimeout ms: ${e.message}. "
+                            "Cannot communicate with $dataSource ${
+                                getQuery(
+                                    minLat,
+                                    minLon,
+                                    maxLat,
+                                    maxLon
+                                )
+                            }; will "
+                                    + "retry in $incrementalBackoffTimeout ms: $e."
                         )
 
                         delay(incrementalBackoffTimeout)
@@ -325,6 +323,9 @@ object OsmDataProvider {
         PROPOSED("proposed"),
         CONSTRUCTION("construction"),
 
+        // Not a highway= type, but rather indicated by waterway=something
+        WATERWAY(null),
+
         // Non-OSM types
         RESIDENTIAL_DESIGNATED(null),
         BAD_PATH(null),
@@ -342,6 +343,50 @@ object OsmDataProvider {
             }
         }
     }
+
+    /**
+     * Type of waterway as per Open Street Map specification
+     *
+     * https://wiki.openstreetmap.org/wiki/Key:waterway
+     */
+    enum class WaterWayType(private val osmValue: String?, val isShown: Boolean = true) {
+        RIVER("river"),
+        STREAM("stream"),
+        TIDAL_CHANNEL("tidal_channel"),
+        FLOWLINE("flow_line", isShown = false),
+        CANAL("canal"),
+        PRESSURISED("pressurised", isShown = false),
+        DRAIN("drain"),
+        DITCH("ditch"),
+        FAIRWAY("fairway", isShown = false),
+        FISH_PASS("fish_pass"),
+        CANOE_PASS("canoe_pass"),
+        DOCK("dock", isShown = false),
+        BOATYARD("boatyard", isShown = false),
+        DAM("dam", isShown = false),
+        WEIR("weir", isShown = false),
+        WATERFALL("waterfall", isShown = false),
+        RAPIDS("rapid", isShown = false),
+        LOCK_GATE("lock_date", isShown = false),
+        SLUICE_GATE("sluice_date", isShown = false),
+        FLOOD_GATE("flood_gate", isShown = false),
+        DEBRIS_SCREEN("debris_screen", isShown = false),
+        SECURITY_LOCK("security_lock", isShown = false),
+        CHECK_DAM("check_dam", isShown = false),
+        TURNING_POINT("turning_point", isShown = false),
+        WATER_POINT("water_point", isShown = false),
+        FUEL("fuel", isShown = false);
+
+        companion object {
+            private val valueToEnumMap = enumValues<WaterWayType>().mapNotNull { waterWayType ->
+                waterWayType.osmValue?.let { osmValue -> osmValue to waterWayType }
+            }.toMap()
+
+            internal operator fun get(osmValue: String): WaterWayType? {
+                return valueToEnumMap[osmValue]
+            }
+        }
+    }
 }
 
 private fun XmlPullParser.parseNode(): ParsedNode {
@@ -354,9 +399,11 @@ private fun XmlPullParser.parseNode(): ParsedNode {
             "id" -> {
                 id = getAttributeValue(i).toLong()
             }
+
             "lat" -> {
                 latitude = getAttributeValue(i).toDouble()
             }
+
             "lon" -> {
                 longitude = getAttributeValue(i).toDouble()
             }
@@ -379,6 +426,7 @@ private fun XmlPullParser.parseWayTag(): Pair<String, String> {
             "k" -> {
                 key = getAttributeValue(i)
             }
+
             "v" -> {
                 value = getAttributeValue(i)
             }
@@ -411,24 +459,37 @@ private fun XmlPullParser.parseWay(): ParsedWay {
             "nd" -> {
                 wayNodeRef.add(parseWayNd())
             }
+
             "tag" -> {
                 val newTag = parseWayTag()
                 when (newTag.first) {
                     "name" -> {
                         wayName = newTag.second
                     }
+                    // See https://wiki.openstreetmap.org/wiki/Key:waterway
+                    "waterway" -> {
+                        val waterWayType = WaterWayType[newTag.second]
+                        if (waterWayType?.isShown == true) {
+                            wayHighway = HighwayType.WATERWAY
+                        }
+                    }
+
                     "highway" -> {
                         wayHighway = HighwayType[newTag.second]
                     }
+
                     "bicycle" -> {
                         wayBicycle = BicycleType[newTag.second]
                     }
+
                     "surface" -> {
                         waySurface = SurfaceType[newTag.second]
                     }
+
                     "service" -> {
                         wayService = ServiceType[newTag.second]
                     }
+
                     "access" -> {
                         // See https://wiki.openstreetmap.org/wiki/Key:access
                         if (newTag.second in setOf("no", "private", "customers", "delivery")
@@ -439,12 +500,14 @@ private fun XmlPullParser.parseWay(): ParsedWay {
                             wayBicycle = BicycleType.NO
                         }
                     }
+
                     "motorroad" -> {
                         if (newTag.second == "yes") {
                             // motorroad=yes implies bicycle=no
                             wayBicycle = BicycleType.NO
                         }
                     }
+
                     "oneway" -> {
                         oneway = when (newTag.second) {
                             "yes", "1", "true" -> OneWayType.FORWARDS
@@ -494,6 +557,7 @@ private fun XmlPullParser.parseQueryResult()
                 val node = parseNode()
                 nodes += node
             }
+
             "way" -> {
                 val newWay = parseWay()
 
@@ -589,9 +653,11 @@ class ParsedWay(
                 keepStreetName -> {
                     name
                 }
+
                 name != null -> {
                     ""
                 }
+
                 else -> {
                     null
                 }
@@ -601,7 +667,7 @@ class ParsedWay(
 }
 
 /** Read [ParsedWay] from input stream */
-internal fun DataInputStream.readParsedWay(dataFormatVersion: Int): ParsedWay {
+internal fun DataInputStream.readParsedWay(): ParsedWay {
     fun <T> DataInputStream.readNullOr(block: (i: Int) -> T?): T? {
         return readInt().let { i ->
             if (i >= 0) {
@@ -615,13 +681,9 @@ internal fun DataInputStream.readParsedWay(dataFormatVersion: Int): ParsedWay {
     return ParsedWay(
         readLong(),
         readBoolean(),
-        if (dataFormatVersion == 2) {
-            readBoolean()
-        } else {
-            false
-        },
+        readBoolean(),
         readNullOr { ordinal ->
-            HighwayType.values()[ordinal]
+            HighwayType.entries[ordinal]
         },
         if (readBoolean()) {
             readUTF()
@@ -629,13 +691,13 @@ internal fun DataInputStream.readParsedWay(dataFormatVersion: Int): ParsedWay {
             null
         },
         readNullOr { ordinal ->
-            BicycleType.values()[ordinal]
+            BicycleType.entries[ordinal]
         },
         readNullOr { ordinal ->
-            SurfaceType.values()[ordinal]
+            SurfaceType.entries[ordinal]
         },
         readNullOr { ordinal ->
-            ServiceType.values()[ordinal]
+            ServiceType.entries[ordinal]
         }, run {
             val numNodes = readInt()
             val nodes = LongArray(numNodes)

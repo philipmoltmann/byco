@@ -106,7 +106,7 @@ class PreviousRide(
     }
 }
 
-/** Write the data for the [ride] to the output stream.
+/** Write the data for the [track] to the output stream.
  *
  * @param removeStart Meters to remove from start of ride
  * @param removeEnd Meters to remove from end of ride

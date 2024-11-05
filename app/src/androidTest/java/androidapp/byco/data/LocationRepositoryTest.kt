@@ -36,7 +36,7 @@ class LocationRepositoryTest : BaseLocationTest() {
             locationRepo.smoothedLocation.filter { smoothedLocation ->
                 // The first value might be stale, hence it is acceptable to ignore it
                 if (isFirst && smoothedLocation?.isMoving != shouldBeMoving) {
-                    isFirst = true
+                    isFirst = false
                     false
                 } else {
                     true

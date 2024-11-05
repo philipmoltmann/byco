@@ -23,7 +23,6 @@ import android.app.Application
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
-import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
@@ -85,6 +84,7 @@ import java.io.File
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import kotlin.time.Duration.Companion.seconds
+import androidx.core.net.toUri
 
 /** ViewModel for [RidingActivity] */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -333,11 +333,9 @@ class RidingActivityViewModel(application: Application, val state: SavedStateHan
     fun showHelp(activity: Activity) {
         activity.startActivity(
             Intent(
-                Intent.ACTION_VIEW, Uri.parse(
-                    app.packageManager.getApplicationInfoCompat(
-                        app.packageName, PackageManager.GET_META_DATA
-                    ).metaData.getString("help_url")
-                )
+                Intent.ACTION_VIEW, app.packageManager.getApplicationInfoCompat(
+                    app.packageName, PackageManager.GET_META_DATA
+                ).metaData.getString("help_url")!!.toUri()
             )
         )
     }

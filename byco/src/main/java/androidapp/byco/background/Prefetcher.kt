@@ -19,7 +19,6 @@ package androidapp.byco.background
 import android.app.job.JobInfo
 import android.app.job.JobScheduler
 import android.content.ComponentName
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.location.Location
 import android.util.Log
@@ -83,6 +82,7 @@ import java.math.BigDecimal
 import java.math.BigDecimal.TEN
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import androidx.core.graphics.createBitmap
 
 /**
  * Runs in background and prefetches data and creates thumbnails.
@@ -231,22 +231,18 @@ class Prefetcher(
                                         val tileWidth =
                                             BigDecimal(4).divide(TEN.pow(MapDataRepository.TILE_SCALE))
 
-                                        var lightThumbnail: Bitmap? =
-                                            Bitmap.createBitmap(
+                                        val (lightThumbnail, darkThumbnail) = try {
+                                            val lightThumbnail = createBitmap(
                                                 ThumbnailRepository[app].THUMBNAIL_SIZE,
-                                                ThumbnailRepository[app].THUMBNAIL_SIZE,
-                                                Bitmap.Config.ARGB_8888
+                                                ThumbnailRepository[app].THUMBNAIL_SIZE
                                             )
-                                        val lightCanvas = Canvas(lightThumbnail!!)
-                                        var darkThumbnail: Bitmap? =
-                                            Bitmap.createBitmap(
+                                            val lightCanvas = Canvas(lightThumbnail)
+                                            val darkThumbnail = createBitmap(
                                                 ThumbnailRepository[app].THUMBNAIL_SIZE,
-                                                ThumbnailRepository[app].THUMBNAIL_SIZE,
-                                                Bitmap.Config.ARGB_8888
+                                                ThumbnailRepository[app].THUMBNAIL_SIZE
                                             )
-                                        val darkCanvas = Canvas(darkThumbnail!!)
+                                            val darkCanvas = Canvas(darkThumbnail)
 
-                                        try {
                                             val track = Track.parseFrom(ride.file).restrictTo(null)
 
                                             val countryCode = withTimeout(1.minutes) {
@@ -309,24 +305,24 @@ class Prefetcher(
                                                 lightRender.await()
                                                 darkRender.await()
                                             }
+
+                                            lightThumbnail to darkThumbnail
                                         } catch (e: IOException) {
                                             DebugLog.e(
                                                 TAG,
                                                 "Could not generated thumbnail(s) for ${ride.file.name}",
                                                 e
                                             )
-                                            lightThumbnail = null
-                                            darkThumbnail = null
                                             delay(1.seconds)
+                                            null to null
                                         } catch (e: TimeoutCancellationException) {
                                             DebugLog.e(
                                                 TAG,
                                                 "Could not generated thumbnail(s) for ${ride.file.name}",
                                                 e
                                             )
-                                            lightThumbnail = null
-                                            darkThumbnail = null
                                             delay(1.minutes)
+                                            null to null
                                         }
 
                                         if (lightThumbnail != null && darkThumbnail != null) {

@@ -42,17 +42,36 @@ class DiskCacheTest {
     private val testScope = CoroutineScope(Job())
     private val cacheLocation = File("testData", "cache")
 
-    private val retreiver: suspend CoroutineScope.(Int) -> Long = spyk()
-    private val writer: suspend CoroutineScope.(OutputStream, Int, Long) -> Unit =
+    class IntKey(val key: Int): DiskCacheKey {
+        override fun toDirName() = "$key"
+
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as IntKey
+
+            return key == other.key
+        }
+
+        override fun hashCode(): Int {
+            return key
+        }
+    }
+
+    private fun Int.toKey(): IntKey = IntKey(this)
+
+    private val retreiver: suspend CoroutineScope.(IntKey) -> Long = spyk()
+    private val writer: suspend CoroutineScope.(OutputStream, IntKey, Long) -> Unit =
         { out, key, value ->
             DataOutputStream(out).use {
-                it.writeInt(key)
+                it.writeInt(key.key)
                 it.writeLong(value)
             }
         }
-    private val reader: suspend CoroutineScope.(InputStream) -> (Pair<Int, Long>) = { ins ->
+    private val reader: suspend CoroutineScope.(InputStream) -> (Pair<IntKey, Long>) = { ins ->
         DataInputStream(ins).use {
-            it.readInt() to it.readLong()
+            it.readInt().toKey() to it.readLong()
         }
     }
     private val cache = diskCacheOf(cacheLocation, 100000, retreiver, writer, reader)
@@ -76,47 +95,49 @@ class DiskCacheTest {
     @Test
     fun valuesGetCached() {
         runBlocking {
-            val cachedVal = cache.get(1)
+            val cachedVal = cache.get(1.toKey())
 
-            assertThat(cache.get(1)).isEqualTo(cachedVal)
-            coVerify(exactly = 1) { retreiver(any(), 1) }
+            assertThat(cache.get(1.toKey())).isEqualTo(cachedVal)
+            coVerify(exactly = 1) { retreiver(any(), 1.toKey()) }
         }
     }
 
     @Test
     fun newValueGetsReturned() {
         runBlocking {
-            coEvery { retreiver(any(), 1) } returns 42
-            assertThat(cache.get(1)).isEqualTo(42)
+            coEvery { retreiver(any(), 1.toKey()) } returns 42
+            assertThat(cache.get(1.toKey())).isEqualTo(42)
         }
     }
 
     @Test
     fun newValueGetsResolved() {
         runBlocking {
-            cache.get(1)
-            coVerify { retreiver(any(), 1) }
+            cache.get(1.toKey())
+            coVerify { retreiver(any(), 1.toKey()) }
         }
     }
 
     @Test
     fun differentKeysReferToDifferentValues() {
         runBlocking {
-            cache.get(1)
+            cache.get(1.toKey())
 
-            coEvery { retreiver(any(), 2) } returns 42
+            coEvery { retreiver(any(), 2.toKey()) } returns 42
 
-            assertThat(cache.get(2)).isEqualTo(42)
-            coVerify { retreiver(any(), 2) }
+            assertThat(cache.get(2.toKey())).isEqualTo(42)
+            coVerify { retreiver(any(), 2.toKey()) }
         }
     }
 
     @Test
     fun sameHashCodeDoesNotCauseConflictsIfKeysAreNotEqual() {
-        class Key(val key: Int) : Serializable {
+        class Key(val key: Int) : Serializable, DiskCacheKey {
             override fun hashCode(): Int {
                 return 0
             }
+
+            override fun toDirName() = "$key"
 
             override fun equals(other: Any?): Boolean {
                 if (other == null || other !is Key) {
@@ -156,21 +177,21 @@ class DiskCacheTest {
     @Test
     fun clearRemovesValues() {
         runBlocking {
-            cache.get(1)
+            cache.get(1.toKey())
 
             cache.clear()
             clearAllMocks()
-            coEvery { retreiver(any(), 1) } returns 42
+            coEvery { retreiver(any(), 1.toKey()) } returns 42
 
-            assertThat(cache.get(1)).isEqualTo(42)
-            coVerify { retreiver(any(), 1) }
+            assertThat(cache.get(1.toKey())).isEqualTo(42)
+            coVerify { retreiver(any(), 1.toKey()) }
         }
     }
 
     @Test
     fun parallelGetCachedForSameKey() {
-        val val1 = testScope.async { cache.get(1) }
-        val val2 = testScope.async { cache.get(1) }
+        val val1 = testScope.async { cache.get(1.toKey()) }
+        val val2 = testScope.async { cache.get(1.toKey()) }
 
         runBlocking {
             assertThat(val1.await()).isEqualTo(val2.await())
@@ -181,8 +202,8 @@ class DiskCacheTest {
 
     @Test
     fun parallelGetCachedForDifferentKeys() {
-        val val1 = testScope.async { cache.get(1) }
-        val val2 = testScope.async { cache.get(2) }
+        val val1 = testScope.async { cache.get(1.toKey()) }
+        val val2 = testScope.async { cache.get(2.toKey()) }
 
         runBlocking {
             val1.await()
@@ -197,17 +218,17 @@ class DiskCacheTest {
         val cacheWithLowMaxAge = diskCacheOf(cacheLocation, 1, retreiver, writer, reader)
 
         runBlocking {
-            cacheWithLowMaxAge.get(1)
+            cacheWithLowMaxAge.get(1.toKey())
 
             withContext(Dispatchers.IO) {
                 Thread.sleep(100)
             }
 
             clearAllMocks()
-            coEvery { retreiver(any(), 1) } returns 42
+            coEvery { retreiver(any(), 1.toKey()) } returns 42
 
             // Stale value should be returned
-            assertThat(cacheWithLowMaxAge.get(1)).isEqualTo(23)
+            assertThat(cacheWithLowMaxAge.get(1.toKey())).isEqualTo(23)
         }
     }
 
@@ -216,25 +237,25 @@ class DiskCacheTest {
         val cacheWithLowMaxAge = diskCacheOf(cacheLocation, 50, retreiver, writer, reader)
 
         runBlocking {
-            cacheWithLowMaxAge.get(1)
+            cacheWithLowMaxAge.get(1.toKey())
 
             withContext(Dispatchers.IO) {
                 Thread.sleep(100)
             }
 
             clearAllMocks()
-            coEvery { retreiver(any(), 1) } returns 42
+            coEvery { retreiver(any(), 1.toKey()) } returns 42
 
             // Read stale value -> should trigger an async update of value
-            cacheWithLowMaxAge.get(1)
+            cacheWithLowMaxAge.get(1.toKey())
             // Async code should update value
-            coVerify(timeout = 25) { retreiver(any(), 1) }
+            coVerify(timeout = 25) { retreiver(any(), 1.toKey()) }
 
             // New value should be returned and not be re-retrieved
             clearAllMocks(answers = false)
-            assertThat(cacheWithLowMaxAge.get(1)).isEqualTo(42)
+            assertThat(cacheWithLowMaxAge.get(1.toKey())).isEqualTo(42)
             // No additional calls to retriever
-            coVerify(exactly = 0) { retreiver(any(), 1) }
+            coVerify(exactly = 0) { retreiver(any(), 1.toKey()) }
         }
     }
 

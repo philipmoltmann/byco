@@ -1,5 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
+<?xml version="1.0" encoding="utf-8"?><!--
   ~ Copyright 2022 Google LLC
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +27,7 @@
     <color name="designated_way">#FF44BB00</color>
     <color name="designated_way_indicator">#FF88DD00</color>
     <color name="bad_surface_way">#FF111111</color>
+    <color name="water">#FF080808</color>
     <!-- bad_surface_way_indicator is map_background -->
     <color name="map_background">#FF222222</color>
     <color name="map_background_translucent">#AA222222</color>

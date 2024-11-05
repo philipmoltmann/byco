@@ -283,14 +283,20 @@ class PreviousRidesRepository private constructor(
      * @see rideShownOnMap
      */
     suspend fun showOnMap(ride: PreviousRide?) {
-        // Directions home are not persisted.
-        rideShownOnMap.value?.let { currentShownRide ->
-            if (currentShownRide.isDirectionsHome) {
-                delete(currentShownRide)
-            }
+        val currentShownRide = rideShownOnMap.value
+
+        if (currentShownRide == ride) {
+            return
         }
 
         rideShownOnMap.emit(ride)
+
+        // Directions home are not persisted.
+        currentShownRide?.let {
+            if (it.isDirectionsHome) {
+                delete(it)
+            }
+        }
     }
 
     /**

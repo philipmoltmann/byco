@@ -18,10 +18,8 @@ package androidapp.byco.ui
 
 import android.app.Application
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.net.Uri
 import androidapp.byco.LowPriority
 import androidapp.byco.data.LocationRepository
 import androidapp.byco.data.MapDataRepository
@@ -68,6 +66,8 @@ import lib.gpx.MapArea
 import java.lang.ref.WeakReference
 import java.math.BigDecimal.ONE
 import java.math.BigDecimal.TEN
+import androidx.core.net.toUri
+import androidx.core.graphics.createBitmap
 
 /** ViewModel for [ConfirmDirectionsActivity] */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -91,10 +91,8 @@ class ConfirmDirectionsActivityViewModel(
             rideStart?.let {
                 val gmmIntent = Intent(
                     Intent.ACTION_VIEW,
-                    Uri.parse(
-                        "google.navigation:q=${rideStart.latitude}," +
-                                "${rideStart.longitude}&mode=b"
-                    )
+                    ("google.navigation:q=${rideStart.latitude}," +
+                            "${rideStart.longitude}&mode=b").toUri()
                 )
                 gmmIntent.setPackage("com.google.android.apps.maps")
 
@@ -215,10 +213,10 @@ class ConfirmDirectionsActivityViewModel(
     private suspend fun getRouteBackground(width: Int, height: Int, isDarkMode: Boolean) =
         getRouteArea(width, height).flatMapLatest { routeArea ->
             if (routeArea == null) {
-                flowOf(routeArea to Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888))
+                flowOf(routeArea to createBitmap(width, height))
             } else {
                 val returnValueUpdate = Mutex()
-                val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                val image = createBitmap(width, height)
                 val canvas = Canvas(image)
 
                 var delayingUpdateSince = 0L
@@ -384,11 +382,7 @@ class ConfirmDirectionsActivityViewModel(
                 return@mapLatest background.second
             } else {
                 if (background.first == foreground.first) {
-                    return@mapLatest Bitmap.createBitmap(
-                        width,
-                        height,
-                        Bitmap.Config.ARGB_8888
-                    ).applyCanvas {
+                    return@mapLatest createBitmap(width, height).applyCanvas {
                         drawBitmap(background.second, 0F, 0F, bitmapDrawPaint)
                         drawBitmap(foreground.second, 0F, 0F, bitmapDrawPaint)
                     }

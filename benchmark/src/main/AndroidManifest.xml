@@ -4,7 +4,8 @@
 
     <application
         android:label="Byco Benchmark"
-        tools:replace="android:label">
+        tools:replace="android:label"
+        tools:ignore="MissingClass">
         <!-- Remove file profiler as names have to be device wide unique -->
         <provider
             android:name="androidx.core.content.FileProvider"

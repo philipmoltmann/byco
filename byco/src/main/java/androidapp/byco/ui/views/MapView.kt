@@ -52,6 +52,7 @@ import java.math.BigDecimal.ZERO
 import java.math.RoundingMode.*
 import kotlin.coroutines.coroutineContext
 import kotlin.math.*
+import androidx.core.graphics.createBitmap
 
 // [Way] types in order of painting (first is on top)
 val DISPLAYED_HIGHWAY_TYPES = listOf(
@@ -77,7 +78,8 @@ val DISPLAYED_HIGHWAY_TYPES = listOf(
     PRIMARY_LINK,   // |
     SECONDARY_LINK, // |
     TERTIARY_LINK,  // L
-    BAD_PATH, // below everything, as only usable in emergencies
+    BAD_PATH, // below every road, as only usable in emergencies
+    WATERWAY
 ).asReversed()
 
 private typealias Vector = DoubleArray
@@ -164,6 +166,7 @@ class MapView(
     private var residentialPaint = Paint()
     private var residentialDesignatedPaint = Paint()
     private var residentialNoBicyclesPaint = Paint()
+    private var waterWayPaint = Paint()
 
     private var badSurfaceWayIndicatorColor = BLACK
     private var currentRideIndicatorColor = BLACK
@@ -219,11 +222,7 @@ class MapView(
             // Somehow drawing with a transformed canvas [Canvas.withMatrix] causes artifacts on
             // some devices (E.g. Pixel 3XL on Android Q). This adds 1.8ms (Pixel 4a, suburban
             // map, 1024x1024) and thereby doubles the time spent in [renderFrame] though.
-            Bitmap.createBitmap(
-                content.width,
-                content.height,
-                Bitmap.Config.ARGB_8888
-            ).apply {
+            createBitmap(content.width, content.height).apply {
                 content.draw(Canvas(this))
             }
         } else {
@@ -416,6 +415,8 @@ class MapView(
                         else -> SERVICE
                     }
 
+                WATERWAY -> WATERWAY
+
                 else -> throw IllegalStateException("Unknown way type $highway")
             }
         }
@@ -459,6 +460,8 @@ class MapView(
                         !areBicyclesAllowed -> residentialNoBicyclesPaint
                         else -> residentialPaint
                     }
+
+                WATERWAY -> waterWayPaint
 
                 else -> throw IllegalStateException("Unknown way type $highway")
             }
@@ -769,6 +772,13 @@ class MapView(
             }
             pathBadSurfacePaint = Paint(pathPaint).apply {
                 color = getColor(R.styleable.MapView_badSurfaceWayColor, BLACK)
+            }
+            waterWayPaint = Paint(commonWayPaint).apply {
+                strokeWidth = getFloat(
+                    R.styleable.MapView_waterWayWidth,
+                    18f
+                ) / zoomAdj * dpsPerPx
+                color = getColor(R.styleable.MapView_waterWayColor, BLACK)
             }
 
             currentRidePaint = Paint(commonWayPaint).apply {
@@ -1493,7 +1503,8 @@ class MapView(
                     if (onewayIndicator != null) {
                         input.waysByType[wayType]?.forEach { (way, wayPaint) ->
                             // Motorways, large roads and links are usually one-directional, hence
-                            // no need to show direction markers
+                            // no need to show direction markers. Also waterways are just for
+                            // decoration.
                             if (way.isOneway && wayType !in setOf(
                                     MOTORWAY,
                                     MOTORWAY_LINK,
@@ -1502,7 +1513,8 @@ class MapView(
                                     PRIMARY,
                                     PRIMARY_LINK,
                                     SECONDARY_LINK,
-                                    TERTIARY_LINK
+                                    TERTIARY_LINK,
+                                    WATERWAY
                                 )
                             ) {
                                 coroutineContext.ensureActive()

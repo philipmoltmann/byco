@@ -38,6 +38,8 @@
         <attr name="residentialWayWidth" format="float" />
         <!-- dp at 18 zoom level -->
         <attr name="pathWidth" format="float" />
+        <!-- dp at 18 zoom level -->
+        <attr name="waterWayWidth" format="float" />
         <!-- dp at 18 zoom level (if scale) or unscaled in px -->
         <attr name="scaleCurrentRideWidth" format="boolean" />
         <attr name="currentRideWidth" format="float" />
@@ -49,6 +51,8 @@
         <attr name="highTrafficWayColor" format="color" />
         <attr name="designatedWayColor" format="color" />
         <attr name="badSurfaceWayColor" format="color" />
+        <attr name="waterWayColor" format="color" />
+
         <attr name="currentRideColor" format="color" />
 
         <attr name="noBicyclesWayIndicatorColor" format="color" />

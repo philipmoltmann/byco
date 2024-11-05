@@ -55,6 +55,7 @@ import lib.gpx.GPX_MIME_TYPE
 import java.io.File
 import kotlin.math.abs
 import kotlin.random.Random
+import androidx.core.graphics.createBitmap
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ShareRideActivityViewModel(
@@ -96,7 +97,7 @@ class ShareRideActivityViewModel(
                         0f
                     }
                 )
-            } ?: flowOf(Bitmap.createBitmap(1, 1, Bitmap.Config.ALPHA_8))
+            } ?: flowOf(createBitmap(1, 1, Bitmap.Config.ALPHA_8))
         }
 
     val removeStartAndEnd = savedStateHandle.getStateFlow(KEY_REMOVE_START_AND_END, false)

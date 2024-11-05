@@ -424,6 +424,6 @@ class PreviousRidesActivity : BycoActivity() {
 
     companion object {
         /** Ride selected when the activity was closed. */
-        internal val KEY_SELECTED_PREVIOUS_RIDE = "KEY_SELECTED_PREVIOUS_RIDE"
+        internal const val KEY_SELECTED_PREVIOUS_RIDE = "KEY_SELECTED_PREVIOUS_RIDE"
     }
 }

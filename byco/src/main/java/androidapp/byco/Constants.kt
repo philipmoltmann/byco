@@ -21,11 +21,13 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import java.util.concurrent.Executors
 
 enum class NotificationIds {
+    @Suppress("unused")
     INVALID,
     RIDE_RECORDING
 }
 
 enum class JobIds {
+    @Suppress("unused")
     INVALID,
     PREFETCHER
 }

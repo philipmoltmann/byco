@@ -16,6 +16,7 @@
 
 package androidapp.byco.ui.views
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.util.AttributeSet
 import androidapp.byco.lib.R
@@ -41,12 +42,14 @@ class AutoColumnSizingRecyclerView(
     )
 
     init {
+        @SuppressLint("UseKtx")
         val a = context.obtainStyledAttributes(
             attrs,
             R.styleable.AutoColumnSizingRecyclerView,
             defStyleAttr,
             defStyleRes
         )
+
         maxColumnWidth =
             a.getDimensionPixelSize(R.styleable.AutoColumnSizingRecyclerView_maxColumnWidth, 0)
 

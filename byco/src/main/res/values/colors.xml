@@ -44,6 +44,7 @@
     <color name="designated_way">@color/medium_green</color>
     <color name="designated_way_indicator">#FFB8FF00</color>
     <color name="bad_surface_way">#FF40C4FF</color>
+    <color name="water">#FF018ACA</color>
     <color name="bad_surface_way_indicator">@color/map_background</color>
 
     <color name="cursor_color">#FFFF0000</color>

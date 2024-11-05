@@ -21,11 +21,11 @@ import android.app.Application
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.widget.Toast
 import androidapp.byco.lib.R
 import androidapp.byco.util.BycoViewModel
 import androidapp.byco.util.compat.getApplicationInfoCompat
+import androidx.core.net.toUri
 
 /** ViewModel for [AboutActivity] */
 class AboutActivityViewModel(application: Application) : BycoViewModel(application) {
@@ -37,12 +37,10 @@ class AboutActivityViewModel(application: Application) : BycoViewModel(applicati
         activity.startActivity(
             Intent(
                 Intent.ACTION_VIEW,
-                Uri.parse(
-                    app.packageManager.getApplicationInfoCompat(
-                        app.packageName,
-                        PackageManager.GET_META_DATA
-                    ).metaData.getString("privacy_policy_url")
-                )
+                app.packageManager.getApplicationInfoCompat(
+                    app.packageName,
+                    PackageManager.GET_META_DATA
+                ).metaData.getString("privacy_policy_url")!!.toUri()
             )
         )
     }

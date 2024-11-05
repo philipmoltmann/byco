@@ -121,6 +121,7 @@
         <item name="designatedWayColor">@color/designated_way</item>
         <item name="highTrafficWayColor">@color/high_traffic_way</item>
         <item name="noBicyclesWayColor">@color/no_bicycles_way</item>
+        <item name="waterWayColor">@color/water</item>
 
         <item name="badSurfaceWayIndicatorColor">@color/bad_surface_way_indicator</item>
         <item name="currentRideIndicatorColor">@color/current_ride_indicator_color</item>

@@ -100,7 +100,7 @@ class MapDataRepository private constructor(
     CACHE_LOCATION: File = File(app.cacheDir, "MapData"),
     MAX_AGE: Long = TimeUnit.DAYS.toMillis(90),
     NUM_CACHED_TILES: Int = 64,
-    private val CURRENT_DATA_FORMAT_VERSION: Int = 2
+    private val CURRENT_DATA_FORMAT_VERSION: Int = 3
 ) : Repository(app) {
     private val TAG = MapDataRepository::class.java.simpleName
 
@@ -187,7 +187,7 @@ class MapDataRepository private constructor(
 
                         DataInputStream(zipIs.buffered()).use { dataIs ->
                             when (val version = dataIs.readInt()) {
-                                1, 2 -> {
+                                CURRENT_DATA_FORMAT_VERSION -> {
                                     val lat = dataIs.readBigDecimal()
                                     val lon = dataIs.readBigDecimal()
 
@@ -198,7 +198,7 @@ class MapDataRepository private constructor(
                                     ensureActive()
 
                                     val ways = (0 until dataIs.readInt()).map {
-                                        dataIs.readParsedWay(version)
+                                        dataIs.readParsedWay()
                                     }
 
                                     MapTileKey(lat, lon) to (nodes to ways)

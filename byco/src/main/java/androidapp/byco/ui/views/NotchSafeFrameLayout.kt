@@ -16,6 +16,7 @@
 
 package androidapp.byco.ui.views
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Rect
 import android.os.Build
@@ -110,13 +111,14 @@ class NotchSafeFrameLayout(
 
         paddingAttrs.recycle()
 
+        @SuppressLint("UseKtx")
         val styledAttrs = context.obtainStyledAttributes(
             attrs,
             R.styleable.NotchSafeFrameLayout,
             defStyleAttr,
             defStyleRes
         )
-        val addPaddingAttr = AddPadding.values().find {
+        val addPaddingAttr = entries.find {
             it.ordinal == styledAttrs.getIntOrThrow(
                 R.styleable.NotchSafeFrameLayout_addPadding,
             )

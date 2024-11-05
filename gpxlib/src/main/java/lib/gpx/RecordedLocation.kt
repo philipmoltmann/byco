@@ -16,8 +16,10 @@
 
 package lib.gpx
 
+import android.annotation.SuppressLint
 import android.location.Location
-import java.util.*
+import android.os.Parcel
+import android.os.Parcelable.Creator
 
 /**
  * A recorded location, either by this app or read from a GPX file.
@@ -49,6 +51,33 @@ class RecordedLocation(
             longitude = this@RecordedLocation.longitude
             this@RecordedLocation.elevation?.let { altitude = it }
             this@RecordedLocation.time?.let { time = it }
+        }
+    }
+
+    override fun writeToParcel(parcel: Parcel, flags: Int) {
+        super.writeToParcel(parcel, flags)
+        parcel.writeValue(elevation)
+        parcel.writeValue(time)
+    }
+
+    companion object {
+        @Suppress("unused")
+        @JvmField
+        val CREATOR = object : Creator<RecordedLocation> {
+            @Suppress("DEPRECATION")
+            @SuppressLint("ParcelClassLoader")
+            override fun createFromParcel(source: Parcel): RecordedLocation {
+                val basicLocation =
+                    source.readParcelable<BasicLocation>(BasicLocation::class.java.classLoader)
+                return RecordedLocation(
+                    basicLocation!!.latitude,
+                    basicLocation.longitude,
+                    source.readValue(null) as Double?,
+                    source.readValue(null) as Long?
+                )
+            }
+
+            override fun newArray(size: Int) = Array<RecordedLocation?>(size) { null }
         }
     }
 }

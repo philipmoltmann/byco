@@ -21,9 +21,9 @@ import android.util.Log
 /**
  * Like [Log] but only prints in non-release builds
  */
-@Suppress("KotlinConstantConditions")
 class DebugLog {
     companion object {
+        @Suppress("KotlinConstantConditions")
         const val isEnabled = BuildConfig.BUILD_TYPE != "release"
 
         fun v(tag: String, message: String, exception: Throwable? = null) {

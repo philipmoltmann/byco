@@ -85,13 +85,13 @@ fun Track.restrictTo(
 }
 
 internal val Track.minLat: Double
-    get() = segments.minOf { it.minOfOrNull { it.latitude } ?: Double.NaN }
+    get() = segments.minOf { segment -> segment.minOfOrNull { it.latitude } ?: Double.NaN }
 
 internal val Track.minLon: Double
-    get() = segments.minOf { it.minOfOrNull { it.longitude } ?: Double.NaN }
+    get() = segments.minOf { segment -> segment.minOfOrNull { it.longitude } ?: Double.NaN }
 
 internal val Track.maxLat: Double
-    get() = segments.maxOf { it.maxOfOrNull { it.latitude } ?: Double.NaN }
+    get() = segments.maxOf { segment -> segment.maxOfOrNull { it.latitude } ?: Double.NaN }
 
 internal val Track.maxLon: Double
-    get() = segments.maxOf { it.maxOfOrNull { it.longitude } ?: Double.NaN }
+    get() = segments.maxOf { segment -> segment.maxOfOrNull { it.longitude } ?: Double.NaN }

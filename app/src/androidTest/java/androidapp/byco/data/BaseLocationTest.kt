@@ -38,6 +38,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.tasks.CancellationToken
 import com.google.android.gms.tasks.Task
+import com.google.android.gms.tasks.TaskCompletionSource
 import com.google.android.gms.tasks.Tasks
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -65,11 +66,15 @@ open class BaseLocationTest : BaseTest() {
         }
 
         override fun getLastLocation(): Task<Location> {
-            return Tasks.call(Executors.newSingleThreadExecutor()) {
+            val taskCompletionSource = TaskCompletionSource<Location>()
+
+            Executors.newSingleThreadExecutor().execute {
                 runBlocking {
-                    testLocations.filterNotNull().first()
+                    taskCompletionSource.setResult(testLocations.filterNotNull().first())
                 }
             }
+
+            return taskCompletionSource.task
         }
 
         override fun getLastLocation(p0: LastLocationRequest): Task<Location> {

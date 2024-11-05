@@ -42,6 +42,7 @@ import androidapp.byco.data.OsmDataProvider.HighwayType.TRACK
 import androidapp.byco.data.OsmDataProvider.HighwayType.TRUNK
 import androidapp.byco.data.OsmDataProvider.HighwayType.TRUNK_LINK
 import androidapp.byco.data.OsmDataProvider.HighwayType.UNCLASSIFIED
+import androidapp.byco.data.OsmDataProvider.HighwayType.WATERWAY
 import androidapp.byco.util.compat.getFromLocationCompat
 import androidx.core.os.ConfigurationCompat
 import kotlinx.coroutines.currentCoroutineContext
@@ -137,7 +138,8 @@ private val BICYCLES_ALLOWED_BY_DEFAULT = mapOf(
             // Not specifically mentioned in wiki but still used
             TRACK, SERVICE
         ), setOf(PEDESTRIAN, BRIDALWAY, FOOTWAY,
-            MOTORWAY, MOTORWAY_LINK)
+            MOTORWAY, MOTORWAY_LINK,
+            WATERWAY)
     ),
     "AU" to DefaultPathAllowances(
         setOf(
